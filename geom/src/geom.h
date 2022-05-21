@@ -120,34 +120,36 @@ namespace geom
         }
     };
 
+    struct Geom {};
+
     template<size_type dim>
-    struct Sphere
+    struct Sphere : Geom
     {
         Point<dim> center;
         value_type radius;
     };
 
     template<size_type dim>
-    struct Triangle
+    struct Triangle : Geom
     {
         Point<dim> a, b, c;
     };
 
     template<size_type dim>
-    struct AABB
+    struct AABB : Geom
     {
         Point<dim> min, max;
     };
 
     template<size_type dim>
-    struct Plane
+    struct Plane : Geom
     {
         Vector<value_type, dim> normal;
         value_type dist;
     };
 
     template<size_type dim>
-    struct Ray
+    struct Ray : Geom
     {
         Point<dim> point;
         Vector<value_type, dim> dir;
