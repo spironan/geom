@@ -6,9 +6,11 @@ namespace geom
     using size_type = size_t;
     using value_type = float;
 
+    template<typename T, size_type size>
+    struct Vector;
 
     template <size_type size>
-    struct Point;
+    using Point = Vector<value_type, size>;
 
     template<typename T, size_type size>
     struct Vector
@@ -19,7 +21,6 @@ namespace geom
             T x, y, z, w;
             // include the type you want here.
         };
-        
 
         Vector<T, size> operator-(Vector<T, size> const& other) const
         {
@@ -73,94 +74,37 @@ namespace geom
             return result;
         }
 
-        explicit operator Point<size>() const
-        {
-            return Point<size>(*this);
-        }
     };
-
-    template <size_type size>
-    struct Point
-    {
-        using vector = Vector<value_type, size>;
-        vector data;
-
-        value_type& operator[](size_type index)
-        {
-            return data[index];
-        }
-        
-        value_type const& operator[](size_type index) const
-        {
-            return data[index];
-        }
-
-        vector operator-(Point<size> const& other) const
-        {
-            return data - other.data;
-        }
-
-        vector operator-(vector const& other) const
-        {
-            return data - other;
-        }
-
-        vector operator+(Point<size> const& other) const
-        {
-            return data + other.data;
-        }
-
-        vector operator*(value_type scalar) const
-        {
-            return data * scalar;
-        }
-        
-        operator vector() const
-        {
-            return data;
-        }
-    };
-
-    struct Geom {};
 
     template<size_type dim>
-    struct Sphere : public Geom
+    struct Sphere 
     {
-        Sphere(Point<dim> center, value_type radius) : center{ center }, radius{ radius } {}
-
         Point<dim> center;
         value_type radius;
     };
 
     template<size_type dim>
-    struct Triangle : public Geom
+    struct Triangle 
     {
-        Triangle(Point<dim> a, Point<dim> b, Point<dim> c): a{ a }, b{ b }, c{ c } {}
-
         Point<dim> a, b, c;
     };
 
     template<size_type dim>
-    struct AABB : public Geom
+    struct AABB 
     {
-        AABB(Point<dim> min, Point<dim> max) : min{ min }, max{ max } {}
-
         Point<dim> min, max;
     };
 
     template<size_type dim>
-    struct Plane : public Geom
+    struct Plane 
     {
-        Plane(Vector<value_type, dim> normal, value_type dist) : normal{ normal }, dist{ dist } {}
         Vector<value_type, dim> normal;
         value_type dist;
     };
 
     template<size_type dim>
-    struct Ray : public Geom
+    struct Ray 
     {
-        Ray(Point<dim> point, Vector<value_type, dim> dir) : point{ point }, dir{ dir } {}
-
         Point<dim> point;
         Vector<value_type, dim> dir;
     };
