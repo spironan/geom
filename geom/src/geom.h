@@ -6,6 +6,7 @@ namespace geom
     using size_type = size_t;
     using value_type = float;
 
+
     template <size_type size>
     struct Point;
 
@@ -123,34 +124,43 @@ namespace geom
     struct Geom {};
 
     template<size_type dim>
-    struct Sphere : Geom
+    struct Sphere : public Geom
     {
+        Sphere(Point<dim> center, value_type radius) : center{ center }, radius{ radius } {}
+
         Point<dim> center;
         value_type radius;
     };
 
     template<size_type dim>
-    struct Triangle : Geom
+    struct Triangle : public Geom
     {
+        Triangle(Point<dim> a, Point<dim> b, Point<dim> c): a{ a }, b{ b }, c{ c } {}
+
         Point<dim> a, b, c;
     };
 
     template<size_type dim>
-    struct AABB : Geom
+    struct AABB : public Geom
     {
+        AABB(Point<dim> min, Point<dim> max) : min{ min }, max{ max } {}
+
         Point<dim> min, max;
     };
 
     template<size_type dim>
-    struct Plane : Geom
+    struct Plane : public Geom
     {
+        Plane(Vector<value_type, dim> normal, value_type dist) : normal{ normal }, dist{ dist } {}
         Vector<value_type, dim> normal;
         value_type dist;
     };
 
     template<size_type dim>
-    struct Ray : Geom
+    struct Ray : public Geom
     {
+        Ray(Point<dim> point, Vector<value_type, dim> dir) : point{ point }, dir{ dir } {}
+
         Point<dim> point;
         Vector<value_type, dim> dir;
     };
