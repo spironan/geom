@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <array>
 
 namespace geom
 {
@@ -17,7 +18,7 @@ namespace geom
     {
         union 
         {
-            T data[size];
+            std::array<T, size> data;
             T x, y, z, w;
             // include the type you want here.
         };
