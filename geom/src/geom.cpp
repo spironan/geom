@@ -34,6 +34,11 @@ namespace geom
         return sqDist;
     }
     
+    value_type length(point pt)
+    {
+        return std::sqrt(distance_sqaured(pt, point{ 0 }));
+    }
+
     vector cross(vector vecA, vector vecB)
     {
         vector result;
@@ -130,45 +135,84 @@ namespace geom
 
             return false;*/
 
-            vector p = point;
-            vector a = triangle.a;
-            vector b = triangle.b;
-            vector c = triangle.c;
-
-            // Move the triangle so that the point becomes the 
-            // triangles origin
-            a -= p;
-            b -= p;
-            c -= p;
-
-            // The point should be moved too, so they are both
-            // relative, but because we don't use p in the
-            // equation anymore, we don't need it!
-            // p -= p;
-
-            // Compute the normal vectors for triangles:
-            // u = normal of PBC
-            // v = normal of PCA
-            // w = normal of PAB
-
-            vector u = cross(b, c);
-            vector v = cross(c, a);
-            vector w = cross(a, b);
-
-            // Test to see if the normals are facing 
-            // the same direction, return false if not
-            if (dot(u, v) < 0.0f) 
             {
-                return false;
+                // using barycentric
+                vector p = point;
+                vector a = triangle.a;
+                vector b = triangle.b;
+                vector c = triangle.c;
+                
+                // Prepare our barycentric variables
+                vector u = b - a;
+                vector v = c - a;
+                vector w = p - a;
+                
+                vector vCrossW = cross(v, w);
+                vector vCrossU = cross(v, u);
+
+                // Test sign of r
+
+                if (dot(vCrossW, vCrossU) < 0)
+                    return false;
+
+                vector uCrossW = cross(u, w);
+                vector uCrossV = cross(u, v);
+
+                // Test sign of t
+                if (dot(uCrossW, uCrossV) < 0)
+                    return false;
+
+                // At this point, we know that r and t and both > 0.
+                // Therefore, as long as their sum is <= 1, each must be less <= 1
+                value_type denom = length(uCrossV);
+                value_type r = length(vCrossW) / denom;
+                value_type t = length(uCrossW) / denom;
+
+                return (r + t <= value_type{ 1.0 });
             }
 
-            if (dot(u, w) < 0.0f) 
-            {
-                return false;
-            }
+            //vector p = point;
+            //vector a = triangle.a;
+            //vector b = triangle.b;
+            //vector c = triangle.c;
 
-            // All normals facing the same way, return true
-            return true;
+            //// Move the triangle so that the point becomes the 
+            //// triangles origin
+            //a -= p;
+            //b -= p;
+            //c -= p;
+
+            //// The point should be moved too, so they are both
+            //// relative, but because we don't use p in the
+            //// equation anymore, we don't need it!
+            //// p -= p;
+
+            //// Compute the normal vectors for triangles:
+            //// u = normal of PBC
+            //// v = normal of PCA
+            //// w = normal of PAB
+
+            //// u = a, v = b, w = c
+
+            //vector u = cross(b, c); 
+            //vector v = cross(c, a); 
+            //vector w = cross(a, b);
+
+            //// Test to see if the normals are facing 
+            //// the same direction, return false if not
+            //if (dot(u, v) < 0.0f) 
+            //{
+            //    return false;
+            //}
+
+            //if (dot(u, w) < 0.0f) 
+            //{
+            //    return false;
+            //}
+
+            //// All normals facing the same way, return true
+            //return true;
+
         }
 
         bool point_plane(point const& point, plane const& plane)

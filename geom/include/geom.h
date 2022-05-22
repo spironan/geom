@@ -130,8 +130,9 @@ namespace geom
     //value_type abs(value_type val);
     value_type dot(vector ptA, vector ptB);
     value_type distance_sqaured(point ptA, point ptB);
-    value_type squared_distance(point pt, aabb const& aabb);
-    
+    value_type distance_sqaured(point pt, aabb const& aabb);
+    value_type length(point pt);
+
     vector cross(vector vecA, vector vecB);
     bool same_side(point p1, point p2, point a, point b);
 
