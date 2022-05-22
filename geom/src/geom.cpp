@@ -27,9 +27,9 @@ namespace geom
         value_type sqDist = 0.f;
         for (size_type i = 0; i < dim; ++i)
         {
-            value_type v = std::abs(pt[i]);
-            if (v < std::abs(aabb.min[i])) sqDist += (std::abs(aabb.min[i]) - v) * (std::abs(aabb.min[i]) - v);
-            if (v > std::abs(aabb.max[i])) sqDist += (v - std::abs(aabb.max[i])) * (v - std::abs(aabb.max[i]));
+            value_type v = pt[i];
+            if (v < aabb.min[i]) sqDist += (aabb.min[i] - v) * (aabb.min[i] - v);
+            if (v > aabb.max[i]) sqDist += (v - aabb.max[i]) * (v - aabb.max[i]);
         }
         return sqDist;
     }
@@ -84,7 +84,7 @@ namespace geom
         {
             for(size_t i = 0; i < dim; ++i)
             {
-                if(!(std::abs(aabbA.min[i]) <= std::abs(aabbB.max[i]) && std::abs(aabbA.max[i]) >= std::abs(aabbB.min[i])))
+                if(!(aabbA.min[i] <= aabbB.max[i] && aabbA.max[i] >= aabbB.min[i]))
                 {
                     return false;
                 }
@@ -104,7 +104,7 @@ namespace geom
         {
             for(size_t i = 0; i < dim; ++i)
             {
-                if(!(std::abs(point[i]) <= std::abs(aabb.max[i]) && std::abs(point[i]) >= std::abs(aabb.min[i])))
+                if(!(point[i] <= aabb.max[i] && point[i] >= aabb.min[i]))
                 {
                     return false;
                 }
@@ -120,14 +120,55 @@ namespace geom
             //         and SameSide(p,c, a,b) then return true
             //     else return false
 
-            if( same_side(point, triangle.a, triangle.b, triangle.c) &&
+            /*if( same_side(point, triangle.a, triangle.b, triangle.c) &&
                 same_side(point, triangle.b, triangle.a, triangle.c) &&
                 same_side(point, triangle.c, triangle.a, triangle.b) )
             {
+                //requires extra coplaner check for 3D
                 return true;
             }
 
-            return false;
+            return false;*/
+
+            vector p = point;
+            vector a = triangle.a;
+            vector b = triangle.b;
+            vector c = triangle.c;
+
+            // Move the triangle so that the point becomes the 
+            // triangles origin
+            a -= p;
+            b -= p;
+            c -= p;
+
+            // The point should be moved too, so they are both
+            // relative, but because we don't use p in the
+            // equation anymore, we don't need it!
+            // p -= p;
+
+            // Compute the normal vectors for triangles:
+            // u = normal of PBC
+            // v = normal of PCA
+            // w = normal of PAB
+
+            vector u = cross(b, c);
+            vector v = cross(c, a);
+            vector w = cross(a, b);
+
+            // Test to see if the normals are facing 
+            // the same direction, return false if not
+            if (dot(u, v) < 0.0f) 
+            {
+                return false;
+            }
+
+            if (dot(u, w) < 0.0f) 
+            {
+                return false;
+            }
+
+            // All normals facing the same way, return true
+            return true;
         }
 
         bool point_plane(point const& point, plane const& plane)

@@ -52,6 +52,12 @@ namespace geom
 
             return result;
         }
+        
+        Vector<T, size>& operator-=(Vector<T, size> const& other)
+        {
+            *this = *this - other;
+            return *this;
+        }
 
         value_type& operator[](size_type index)
         {
