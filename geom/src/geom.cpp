@@ -254,8 +254,8 @@ namespace geom
 
             for(size_t i = 0; i < dim; ++i)
             {
-                value_type t1 = (std::abs(aabb.min[i]) - std::abs(ray.point[i])) * ray_normal_inversed[i];
-                value_type t2 = (std::abs(aabb.max[i]) - std::abs(ray.point[i])) * ray_normal_inversed[i];
+                value_type t1 = (aabb.min[i] - ray.point[i]) * ray_normal_inversed[i];
+                value_type t2 = (aabb.max[i] - ray.point[i]) * ray_normal_inversed[i];
 
                 tmin = std::max(std::min(t1, t2), tmin);
                 tmax = std::min(std::max(t1, t2), tmax);
