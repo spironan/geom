@@ -131,6 +131,7 @@ namespace geom
     value_type dot(vector ptA, vector ptB);
     value_type distance_sqaured(point ptA, point ptB);
     value_type distance_sqaured(point pt, aabb const& aabb);
+    value_type length_squared(point pt);
     value_type length(point pt);
 
     vector cross(vector vecA, vector vecB);
