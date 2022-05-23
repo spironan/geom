@@ -36,15 +36,16 @@ project "geom"
 
     files
     {
-        "geom/src/**.h",
-        "geom/src/**.hpp",
-        "geom/src/**.c",
-        "geom/src/**.cpp",
+        "geom/**.h",
+        "geom/**.hpp",
+        "geom/**.c",
+        "geom/**.cpp",
     }
 
     includedirs
     {
-        "src",
+        "geom/src",
+        "geom/include",
     }
 
     filter "system:windows"

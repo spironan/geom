@@ -8,6 +8,7 @@ bin/
 bin-int/
 *.vcxproj
 *.vcxproj.user
+*.vcxproj.filters
 *.sln
 
 # User-specific files

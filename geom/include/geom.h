@@ -138,6 +138,13 @@ namespace geom
     using aabb      = AABB<dim>;
     using ray       = Ray<dim>;
     
+    value_type epsilon = std::numeric_limits<value_type>::epsilon();
+    value_type maximum = std::numeric_limits<value_type>::max();
+    value_type minimum = std::numeric_limits<value_type>::min();
+    point min_point = { minimum };
+    point max_point = { maximum };
+
+    bool epsilon_test(value_type value);
 
     //value_type abs(value_type val);
     value_type dot(vector ptA, vector ptB);
@@ -157,8 +164,8 @@ namespace geom
         struct RaycastResult
         {
             bool intersect = false;
-            time_type t_entry, t_exit;
-            point p_entry, p_exit;
+            time_type t_entry = minimum, t_exit = maximum;
+            point p_entry = min_point, p_exit = max_point;
 
             friend std::ostream& operator<<(std::ostream& oss, RaycastResult const& result)
             {
@@ -179,7 +186,7 @@ namespace geom
         bool point_plane      (point const& point, plane const& plane);         // assumes plane's normal is normalized
 
         RaycastResult ray_plane        (ray const& ray, plane const& plane);
-        bool ray_aabb         (ray const& ray, aabb const& aabb);
+        RaycastResult ray_aabb         (ray const& ray, aabb const& aabb);
         bool ray_sphere       (ray const& ray, sphere const& sphere);
         bool ray_triangle     (ray const& ray, triangle const& triangle);
 

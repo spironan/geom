@@ -6,6 +6,11 @@
 // standard geometry function implementation
 namespace geom
 {
+    bool epsilon_test(value_type value)
+    {
+        return std::abs(value) < epsilon;
+    }
+
     value_type dot(vector ptA, vector ptB)
     {
         value_type res{0};
@@ -169,7 +174,7 @@ namespace geom
         bool point_plane(point const& point, plane const& plane)
         {
             //std::cout << dot(point, plane.normal) << " " << plane.dist << std::endl;
-            return std::abs(dot(point, plane.normal) - plane.dist) < std::numeric_limits<value_type>::epsilon();
+            return epsilon_test(dot(point, plane.normal) - plane.dist);
         }
 
 
@@ -182,13 +187,35 @@ namespace geom
             // positive distance means ray start position is in-front of plane
             // negative distance means ray start position is behind the plane.
             value_type dist_ray_to_plane = ray_dot_normal - plane.dist;
-            time_type time = dir_dot_normal / dist_ray_to_plane;
-            point final_pos = ray.point + time * ray.dir;
+
+            if (epsilon_test(ray_dot_normal))
+            {
+                if (epsilon_test(dist_ray_to_plane))
+                {
+                    // true if ray is collinear to plane and always intersecting
+                    return { true, 0.0, maximum, ray.point, max_point };
+                }
+                else
+                {
+                    // false if ray is parallel to plane and never hit
+                    return { };
+                }
+            }
+
+            time_type entry_time = dir_dot_normal / dist_ray_to_plane;
+            if (epsilon_test(dist_ray_to_plane))
+            {
+                // ray is on the plane and point
+                entry_time = 0.0;
+            }
+            point final_pos = ray.point + entry_time * ray.dir;
             
-            return { time >= 0.0, time, time, final_pos, final_pos };
+            // only one point when hitting the plane therefore entry == exit
+            // if time is <= 0 the plane is behind the ray
+            return { entry_time >= 0.0, entry_time, entry_time, final_pos, final_pos };
         }
 
-        bool ray_aabb(ray const& ray, aabb const& aabb)
+        RaycastResult ray_aabb(ray const& ray, aabb const& aabb)
         {
             vector ray_normal_inversed = 1.0f / ray.dir;
 
@@ -222,7 +249,10 @@ namespace geom
             // tmin = std::max(tmin, std::min(tz1, tz2));
             // tmax = std::min(tmax, std::max(tz1, tz2));
 
-            return tmax >= std::max(0.0f, tmin); //&& tmin < t;
+            point entry_pos = ray.point + tmin * ray.dir;
+            point exit_pos = ray.point + tmax * ray.dir;
+
+            return { tmax >= std::max(0.0f, tmin) /* && tmin < t; */ , tmin, tmax, entry_pos, exit_pos };
         }
 
         bool ray_sphere(ray const& ray, sphere const& sphere)
@@ -231,7 +261,7 @@ namespace geom
             auto radius_squared = sphere.radius * sphere.radius;
 
             // effectively distance(ray.point, sphere.center) <= sphere. radius
-            if(dot(ca, ca) <= radius_squared)
+            if(length_squared(ca) <= radius_squared)
                 return true;
 
             // assumes ray direction is normalized.
