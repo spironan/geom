@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <array>
+#include <iostream>
 
 namespace geom
 {
@@ -81,6 +82,16 @@ namespace geom
             return result;
         }
 
+        friend Vector<value_type, size> operator*(value_type scalar, Vector<value_type, size> const& vector)
+        {
+            return vector * scalar;
+        }
+
+        friend std::ostream& operator<<(std::ostream& oss, Vector<value_type, size> const& vector)
+        {
+            oss << vector.x << "," << vector.y << "," << vector.z << "\n";
+            return oss;
+        }
     };
 
     template<size_type dim>
@@ -127,10 +138,12 @@ namespace geom
     using aabb      = AABB<dim>;
     using ray       = Ray<dim>;
     
+
     //value_type abs(value_type val);
     value_type dot(vector ptA, vector ptB);
     value_type distance_sqaured(point ptA, point ptB);
     value_type distance_sqaured(point pt, aabb const& aabb);
+    value_type length_squared(point pt);
     value_type length(point pt);
 
     vector cross(vector vecA, vector vecB);
@@ -139,6 +152,23 @@ namespace geom
     // intersection between geometry support
     namespace intersection
     {
+        using time_type = value_type;
+
+        struct RaycastResult
+        {
+            bool intersect = false;
+            time_type t_entry, t_exit;
+            point p_entry, p_exit;
+
+            friend std::ostream& operator<<(std::ostream& oss, RaycastResult const& result)
+            {
+                oss << "intersect: " << (result.intersect ? "true" : "false") << "\n";
+                oss << "time at entry: " << result.t_entry << ", time at exit: " << result.t_exit << "\n";
+                oss << "point at entry: " << result.p_entry << ", point at exit: " << result.p_exit << "\n";
+                return oss;
+            }
+        };
+
         bool sphere_sphere    (sphere const& sphereA, sphere const& sphereB);
         bool aabb_sphere      (aabb const& aabb, sphere const& sphere);
         bool aabb_aabb        (aabb const& aabbA, aabb const& aabbB);
@@ -148,7 +178,7 @@ namespace geom
         bool point_triangle   (point const& point, triangle const& triangle);
         bool point_plane      (point const& point, plane const& plane);         // assumes plane's normal is normalized
 
-        bool ray_plane        (ray const& ray, plane const& plane);
+        RaycastResult ray_plane        (ray const& ray, plane const& plane);
         bool ray_aabb         (ray const& ray, aabb const& aabb);
         bool ray_sphere       (ray const& ray, sphere const& sphere);
         bool ray_triangle     (ray const& ray, triangle const& triangle);

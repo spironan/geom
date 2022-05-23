@@ -125,57 +125,6 @@ namespace geom
 
         bool point_triangle(point const& point, triangle const& triangle)
         {
-            // function PointInTriangle(p, a, b, c)
-            //     if SameSide(p,a, b,c) and SameSide(p,b, a,c)
-            //         and SameSide(p,c, a,b) then return true
-            //     else return false
-
-            /*if( same_side(point, triangle.a, triangle.b, triangle.c) &&
-                same_side(point, triangle.b, triangle.a, triangle.c) &&
-                same_side(point, triangle.c, triangle.a, triangle.b) )
-            {
-                //requires extra coplaner check for 3D
-                return true;
-            }
-
-            return false;*/
-
-            //{
-            //    // using barycentric
-            //    vector p = point;
-            //    vector a = triangle.a;
-            //    vector b = triangle.b;
-            //    vector c = triangle.c;
-            //    
-            //    // Prepare our barycentric variables
-            //    vector u = b - a;
-            //    vector v = c - a;
-            //    vector w = p - a;
-            //    
-            //    vector vCrossW = cross(v, w);
-            //    vector vCrossU = cross(v, u);
-
-            //    // Test sign of r
-
-            //    if (dot(vCrossW, vCrossU) < 0)
-            //        return false;
-
-            //    vector uCrossW = cross(u, w);
-            //    vector uCrossV = cross(u, v);
-
-            //    // Test sign of t
-            //    if (dot(uCrossW, uCrossV) < 0)
-            //        return false;
-
-            //    // At this point, we know that r and t and both > 0.
-            //    // Therefore, as long as their sum is <= 1, each must be less <= 1
-            //    value_type denom = length(uCrossV);
-            //    value_type r = length(vCrossW) / denom;
-            //    value_type t = length(uCrossW) / denom;
-
-            //    return (r + t <= value_type{ 1.0 });
-            //}
-
             vector p = point;
             vector a = triangle.a;
             vector b = triangle.b;
@@ -196,8 +145,6 @@ namespace geom
             // u = normal of PBC
             // v = normal of PCA
             // w = normal of PAB
-
-            // u = a, v = b, w = c
 
             vector u = cross(b, c); 
             vector v = cross(c, a); 
@@ -222,27 +169,23 @@ namespace geom
         bool point_plane(point const& point, plane const& plane)
         {
             //std::cout << dot(point, plane.normal) << " " << plane.dist << std::endl;
-            return dot(point, plane.normal) == plane.dist;
+            return std::abs(dot(point, plane.normal) - plane.dist) < std::numeric_limits<value_type>::epsilon();
         }
 
 
 
-        bool ray_plane(ray const& ray, plane const& plane)
+        RaycastResult ray_plane(ray const& ray, plane const& plane)
         {
             value_type dir_dot_normal = dot(ray.dir, plane.normal);
             value_type ray_dot_normal = dot(ray.point, plane.normal);
-            //std::cout << "dir dot normal : " << dir_dot_normal << "\n";
-            //std::cout << "ray dot normal : " << ray_dot_normal << "\n";
-            // plane and ray are parallel
-            if(dir_dot_normal == value_type{0})
-            {
-                //std::cout << ray_dot_normal << " " << plane.dist << std::endl;
-                return ray_dot_normal == plane.dist; // ray either has infinite solns or none.
-            }
 
-            // minusing off the distance than multiplying by the normal would not be positive
-            // draw it out and test(should work on all quadrants)
-            return ( (plane.dist - ray_dot_normal) * dir_dot_normal ) >= value_type{0};
+            // positive distance means ray start position is in-front of plane
+            // negative distance means ray start position is behind the plane.
+            value_type dist_ray_to_plane = ray_dot_normal - plane.dist;
+            time_type time = dir_dot_normal / dist_ray_to_plane;
+            point final_pos = ray.point + time * ray.dir;
+            
+            return { time >= 0.0, time, time, final_pos, final_pos };
         }
 
         bool ray_aabb(ray const& ray, aabb const& aabb)
@@ -297,8 +240,8 @@ namespace geom
                 return false;
 
             // ray will eventually hit circle
-            auto newVec = static_cast<point>(ca + (ray.dir * proj));
-            if(distance_sqaured(newVec, newVec) <= radius_squared)
+            auto closest_point = static_cast<point>(ca + (ray.dir * proj));
+            if(distance_sqaured(closest_point, closest_point) <= radius_squared)
                 return true;
 
             return false;
@@ -306,57 +249,16 @@ namespace geom
 
         bool ray_triangle(ray const& ray, triangle const& triangle)
         {
-            vector ab = triangle.b - triangle.a;
-            vector ac = triangle.c - triangle.a;
-            vector qp = ray.dir; //p - q;
-            // Compute triangle normal. Can be precalculated or cached if
-            // intersecting multiple segments against the same triangle
-            vector n = cross(ab, ac);
-            //std::cout << "n:[" << n[0] << "," << n[1] << "," << n[2] << "]\n";
-            // Compute denominator d. If d <= 0, segment is parallel to or points
-            // away from triangle, so exit early
-            value_type d = dot(qp, n);
-            //std::cout << "d:(" << d << ")\n";
-            if (d <= value_type{0})
-                return false;
-            // Compute intersection t value of pq with plane of triangle. A ray
-            // intersects iff 0 <= t. Segment intersects iff 0 <= t <= 1. Delay
-            // dividing by d until intersection has been found to pierce triangle
-            vector ap = ray.point - triangle.a; //p - a;
-            auto t = dot(ap, n);
-            //std::cout << "t" << t << "\n";
-            if (t < value_type{0}) 
-                return false;
-            // if (t > d) 
-            //     return false; // For segment; exclude this code line for a ray test
-
-            // Compute barycentric coordinate components and test if within bounds
-            vector e = cross(qp, ap);
-            auto v = dot(ac, e);
-            if (v < value_type{0} /*|| v > d*/) 
-                return false;
-            auto w = -dot(ab, e);
-            if (w < value_type{0} /*|| v + w > d*/) 
-                return false;
-            // Segment/ray intersects triangle. Perform delayed division and
-            // compute the last barycentric coordinate component
-            value_type ood = 1.0f / d;
-            t *= ood;
-            v *= ood;
-            w *= ood;
-            auto u = 1.0f - v - w;
-            (void)u;
+            //ray triangle using ray-plane + point-aabb.
+            vector plane_normal = cross(triangle.c - triangle.a, triangle.b - triangle.a);
+            plane plane_formed_by_triangle = { plane_normal, dot(triangle.a, plane_normal) };
+            RaycastResult res = ray_plane(ray, plane_formed_by_triangle);
             
-            return true;
-
-            // // do a point triangle test first.
-            // if(point_triangle(ray.point, triangle))
-            //     return true;
+            if (!res.intersect)
+                return false;
             
-            // return false;
+            return point_triangle(res.p_entry, triangle);
         }
-
-
 
         bool plane_aabb(plane const& plane, aabb const& aabb)
         {
