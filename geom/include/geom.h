@@ -20,7 +20,7 @@ namespace geom
         union 
         {
             std::array<T, size> data;
-            T x, y, z, w;
+            struct { T x, y, z, w; };
             // include the type you want here.
         };
 
