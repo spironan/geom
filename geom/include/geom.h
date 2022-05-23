@@ -53,7 +53,17 @@ namespace geom
 
             return result;
         }
-        
+
+        Vector<T, size> operator/(value_type scalar) const
+        {
+            Vector<T, size> result{};
+
+            for (size_type i = 0; i < size; ++i)
+                result[i] = data[i] / scalar;
+
+            return result;
+        }
+
         Vector<T, size>& operator-=(Vector<T, size> const& other)
         {
             *this = *this - other;
