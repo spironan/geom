@@ -49,6 +49,12 @@ namespace geom
         return std::sqrt(length_squared(pt));
     }
 
+    vector normalize(vector vec)
+    {
+        value_type d = length(vec);
+        return vec / d;
+    }
+
     vector cross(vector vecA, vector vecB)
     {
         vector result;
@@ -260,19 +266,24 @@ namespace geom
             auto ca = ray.point - sphere.center;
             auto radius_squared = sphere.radius * sphere.radius;
 
-            // effectively distance(ray.point, sphere.center) <= sphere. radius
+            // check if point is in circle
             if(length_squared(ca) <= radius_squared)
                 return true;
 
-            // assumes ray direction is normalized.
-            value_type proj = dot(ca, ray.dir);
+            auto dir = ray.dir;
+            
+            // don't assumes ray direction is normalized.
+            if (epsilon_test(length_squared(dir) - value_type{ 1 }))
+                dir = normalize(dir);
+
+            // early rejection test.
+            value_type proj = dot(ca, dir);
             if(proj >= 0)
                 return false;
 
-            // ray will eventually hit circle
-            auto closest_point = static_cast<point>(ca + (ray.dir * proj));
-            if(distance_sqaured(closest_point, closest_point) <= radius_squared)
-                return true;
+            auto rejection_vector = static_cast<point>(ca + (dir  * proj));
+            if(length_squared(rejection_vector) <= radius_squared)
+                return true;    // can solve for time here.
 
             return false;
         }
@@ -289,6 +300,7 @@ namespace geom
             
             return point_triangle(res.p_entry, triangle);
         }
+
 
         bool plane_aabb(plane const& plane, aabb const& aabb)
         {

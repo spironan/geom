@@ -102,6 +102,11 @@ namespace geom
             oss << vector.x << "," << vector.y << "," << vector.z << "\n";
             return oss;
         }
+        
+        /*Vector<value_type, size> operator glm::vec3() const
+        {
+            return glm::vec3((float)x, (float)y, (float)z);
+        }*/
     };
 
     template<size_type dim>
@@ -163,6 +168,7 @@ namespace geom
     value_type length_squared(point pt);
     value_type length(point pt);
 
+    vector normalize(vector vec);
     vector cross(vector vecA, vector vecB);
     bool same_side(point p1, point p2, point a, point b);
 
