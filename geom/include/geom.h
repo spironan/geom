@@ -138,11 +138,11 @@ namespace geom
     using aabb      = AABB<dim>;
     using ray       = Ray<dim>;
     
-    value_type epsilon = std::numeric_limits<value_type>::epsilon();
-    value_type maximum = std::numeric_limits<value_type>::max();
-    value_type minimum = std::numeric_limits<value_type>::min();
-    point min_point = { minimum };
-    point max_point = { maximum };
+    static constexpr value_type epsilon = std::numeric_limits<value_type>::epsilon();
+    static constexpr value_type maximum = std::numeric_limits<value_type>::max();
+    static constexpr value_type minimum = std::numeric_limits<value_type>::min();
+    static constexpr point min_point = { minimum };
+    static constexpr point max_point = { maximum };
 
     bool epsilon_test(value_type value);
 
