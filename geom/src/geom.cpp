@@ -187,43 +187,39 @@ namespace geom
 
         RaycastResult ray_plane(ray const& ray, plane const& plane)
         {
-            value_type dir_dot_normal = dot(ray.dir, plane.normal);
-            value_type ray_dot_normal = dot(ray.point, plane.normal);
+            auto ray_dir = normalize(ray.dir);
+            auto plane_normal = normalize(plane.normal);
+            value_type dir_dot_normal = dot(ray_dir, plane_normal);
+            value_type ray_dot_normal = dot(ray.point, plane_normal);
 
-            // positive distance means ray start position is in-front of plane
-            // negative distance means ray start position is behind the plane.
-            value_type dist_ray_to_plane = ray_dot_normal - plane.dist;
-
-            if (epsilon_test(ray_dot_normal))
+            if (epsilon_test(dir_dot_normal))
             {
-                if (epsilon_test(dist_ray_to_plane))
+                if (epsilon_test(ray_dot_normal))
                 {
-                    // true if ray is collinear to plane and always intersecting
+                    // ray is collinear to plane and always intersecting
                     return { true, 0.0, maximum, ray.point, max_point };
                 }
                 else
                 {
-                    // false if ray is parallel to plane and never hit
-                    return { };
+                    // ray is parallel to plane and never hit
+                    return { false };
                 }
             }
 
-            time_type entry_time = dir_dot_normal / dist_ray_to_plane;
-            if (epsilon_test(dist_ray_to_plane))
-            {
-                // ray is on the plane and point
-                entry_time = 0.0;
-            }
-            point final_pos = ray.point + entry_time * ray.dir;
+            // positive time means ray start position is in-front of plane
+            // negative time means ray start position is behind the plane.
+            time_type entry_time = - (ray_dot_normal + plane.dist) / dir_dot_normal;
+            point entry_pos = ray.point + entry_time * ray_dir;
             
             // only one point when hitting the plane therefore entry == exit
             // if time is <= 0 the plane is behind the ray
-            return { entry_time >= 0.0, entry_time, entry_time, final_pos, final_pos };
+            bool will_collide = entry_time >= 0.0;
+            return { will_collide, entry_time, entry_time, entry_pos, entry_pos };
         }
 
         RaycastResult ray_aabb(ray const& ray, aabb const& aabb)
         {
-            vector ray_normal_inversed = 1.0f / ray.dir;
+            vector ray_normal_inversed = value_type{ 1.0 } / ray.dir;
 
             value_type tmin = std::numeric_limits<value_type>::min();
             value_type tmax = std::numeric_limits<value_type>::max();
@@ -261,44 +257,96 @@ namespace geom
             return { tmax >= std::max(0.0f, tmin) /* && tmin < t; */ , tmin, tmax, entry_pos, exit_pos };
         }
 
-        bool ray_sphere(ray const& ray, sphere const& sphere)
+        RaycastResult ray_sphere(ray const& ray, sphere const& sphere)
         {
-            auto ca = ray.point - sphere.center;
+            auto point_to_sphere = sphere.center - ray.point;
+            auto radius_squared = sphere.radius * sphere.radius;
+
+            auto dir = ray.dir;
+
+            // don't assumes ray direction is normalized.
+            if (epsilon_test(length_squared(dir) - value_type{ 1 }))
+                dir = normalize(dir);
+
+            // check if point is in circle
+            auto point_sphere_len_sqr = length_squared(point_to_sphere);
+            if (point_sphere_len_sqr <= radius_squared)
+            {
+                auto exit_dist = std::sqrt(radius_squared - point_sphere_len_sqr);
+                auto exit_time = exit_dist / dot(point_to_sphere, dir);
+                return { true, 0.0, exit_time, ray.point, ray.point + dir * exit_time };
+            }
+
+            // early rejection test.
+            value_type proj = dot(point_to_sphere, dir);
+            if (proj < 0)
+                return { false };
+
+            auto rejection_vector = static_cast<point>(-point_to_sphere + (dir * proj));
+            auto rej_vec_len_sqr = length_squared(rejection_vector);
+            if (rej_vec_len_sqr <= radius_squared)
+            {
+                auto s = std::sqrt(radius_squared - rej_vec_len_sqr);
+                auto entry_time = proj - s;
+                auto exit_time = proj + s;
+                auto entry_point = ray.point + dir * entry_time;
+                auto exit_point = ray.point + dir * exit_time;
+
+                return { true, entry_time, exit_time, entry_point, exit_point };
+            }
+
+            return { false };
+        }
+
+        RaycastResult ray_triangle(ray const& ray, triangle const& triangle)
+        {
+            //ray triangle using ray-plane + point-aabb.
+            vector plane_normal = cross(triangle.b - triangle.a, triangle.c - triangle.a);  // ab x ac
+            plane plane_formed_by_triangle = { plane_normal, - dot(triangle.a, plane_normal) };
+            RaycastResult res = ray_plane(ray, plane_formed_by_triangle);
+            
+            if (res.intersect == false)
+                return res;
+
+            // There is an extreme edge case where the point is on the plane and dir is parallel to the plane
+            // and its currently not handled.
+            
+            //// if ray is on 2d plane.
+            //if (res.t_entry == 0.0 && res.t_exit == maximum)
+            //{
+            //    return ray_triangle_2d(ray, triangle);
+            //}
+            
+            return { point_triangle(res.p_entry, triangle), res.t_entry, res.t_exit, res.p_entry, res.p_exit };
+        }
+
+
+        bool ray_sphere_bool(ray const& ray, sphere const& sphere)
+        {
+            auto point_to_sphere = sphere.center - ray.point;
             auto radius_squared = sphere.radius * sphere.radius;
 
             // check if point is in circle
-            if(length_squared(ca) <= radius_squared)
+            if (length_squared(point_to_sphere) <= radius_squared)
                 return true;
 
             auto dir = ray.dir;
-            
+
             // don't assumes ray direction is normalized.
             if (epsilon_test(length_squared(dir) - value_type{ 1 }))
                 dir = normalize(dir);
 
             // early rejection test.
-            value_type proj = dot(ca, dir);
-            if(proj >= 0)
+            value_type proj = dot(point_to_sphere, dir);
+            if (proj < 0)
                 return false;
 
-            auto rejection_vector = static_cast<point>(ca + (dir  * proj));
-            if(length_squared(rejection_vector) <= radius_squared)
-                return true;    // can solve for time here.
+            auto rejection_vector = static_cast<point>(-point_to_sphere + (dir * proj));
+            auto rej_vec_len_sqr = length_squared(rejection_vector);
+            if (rej_vec_len_sqr <= radius_squared)
+                return true;
 
             return false;
-        }
-
-        bool ray_triangle(ray const& ray, triangle const& triangle)
-        {
-            //ray triangle using ray-plane + point-aabb.
-            vector plane_normal = cross(triangle.c - triangle.a, triangle.b - triangle.a);
-            plane plane_formed_by_triangle = { plane_normal, dot(triangle.a, plane_normal) };
-            RaycastResult res = ray_plane(ray, plane_formed_by_triangle);
-            
-            if (!res.intersect)
-                return false;
-            
-            return point_triangle(res.p_entry, triangle);
         }
 
 

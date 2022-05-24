@@ -24,6 +24,16 @@ namespace geom
             // include the type you want here.
         };
 
+        Vector<T, size> operator-() const
+        {
+            Vector<T, size> result{};
+
+            for (size_type i = 0; i < size; ++i)
+                result[i] = -data[i];
+
+            return result;
+        }
+
         Vector<T, size> operator-(Vector<T, size> const& other) const
         {
             Vector<T, size> result{};
@@ -201,10 +211,12 @@ namespace geom
         bool point_triangle   (point const& point, triangle const& triangle);
         bool point_plane      (point const& point, plane const& plane);         // assumes plane's normal is normalized
 
-        RaycastResult ray_plane        (ray const& ray, plane const& plane);
-        RaycastResult ray_aabb         (ray const& ray, aabb const& aabb);
-        bool ray_sphere       (ray const& ray, sphere const& sphere);
-        bool ray_triangle     (ray const& ray, triangle const& triangle);
+        RaycastResult ray_plane         (ray const& ray, plane const& plane);
+        RaycastResult ray_aabb          (ray const& ray, aabb const& aabb);
+        RaycastResult ray_sphere        (ray const& ray, sphere const& sphere);
+        RaycastResult ray_triangle      (ray const& ray, triangle const& triangle);
+
+        bool ray_sphere_bool       (ray const& ray, sphere const& sphere);
 
         bool plane_aabb       (plane const& plane, aabb const& aabb);
         bool plane_sphere     (plane const& plane, sphere const& sphere);
