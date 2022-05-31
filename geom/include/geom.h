@@ -113,10 +113,6 @@ namespace geom
             return oss;
         }
         
-        /*Vector<value_type, size> operator glm::vec3() const
-        {
-            return glm::vec3((float)x, (float)y, (float)z);
-        }*/
     };
 
     template<size_type dim>

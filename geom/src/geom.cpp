@@ -1,3 +1,5 @@
+#include "SHpch.h"
+
 #include "geom.h"
 
 #include <iostream>     // std::cout
@@ -8,7 +10,7 @@ namespace geom
 {
     bool epsilon_test(value_type value)
     {
-        return std::abs(value) < epsilon;
+        return std::abs(value) <= epsilon;
     }
 
     value_type dot(vector ptA, vector ptB)
@@ -115,7 +117,6 @@ namespace geom
         }
 
 
-
         bool point_sphere(point const& point, sphere const& sphere)
         {
             return sphere.radius * sphere.radius >= distance_sqaured(point, sphere.center);
@@ -136,45 +137,91 @@ namespace geom
 
         bool point_triangle(point const& point, triangle const& triangle)
         {
+            // using barycentric
             vector p = point;
             vector a = triangle.a;
             vector b = triangle.b;
             vector c = triangle.c;
-
-            // Move the triangle so that the point becomes the 
-            // triangles origin
-            a -= p;
-            b -= p;
-            c -= p;
-
-            // The point should be moved too, so they are both
-            // relative, but because we don't use p in the
-            // equation anymore, we don't need it!
-            // p -= p;
-
-            // Compute the normal vectors for triangles:
-            // u = normal of PBC
-            // v = normal of PCA
-            // w = normal of PAB
-
-            vector u = cross(b, c); 
-            vector v = cross(c, a); 
-            vector w = cross(a, b);
-
-            // Test to see if the normals are facing 
-            // the same direction, return false if not
-            if (dot(u, v) < 0.0f) 
-            {
+                
+            // Prepare our barycentric variables
+            vector u = b - a;
+            vector v = c - a;
+            vector w = p - a;
+                
+            vector vCrossW = cross(v, w);
+            vector vCrossU = cross(v, u);
+            
+            value_type margin = 100 * epsilon;
+            // ensure point is on the plane formed by triangle
+            if (dot(w, vCrossU) > margin)
                 return false;
-            }
 
-            if (dot(u, w) < 0.0f) 
-            {
+            // Test sign of r
+
+            if (dot(vCrossW, vCrossU) < 0)
                 return false;
-            }
 
-            // All normals facing the same way, return true
-            return true;
+            vector uCrossW = cross(u, w);
+            vector uCrossV = cross(u, v);
+
+            // Test sign of t
+            if (dot(uCrossW, uCrossV) < 0)
+                return false;
+
+            // At this point, we know that r and t and both > 0.
+            // Therefore, as long as their sum is <= 1, each must be less <= 1
+            value_type denom = length(uCrossV);
+            value_type r = length(vCrossW) / denom;
+            value_type t = length(uCrossW) / denom;
+
+            return (r + t <= value_type{ 1.0 });
+
+            //vector p = point;
+            //vector a = triangle.a;
+            //vector b = triangle.b;
+            //vector c = triangle.c;
+
+            //// Move the triangle so that the point becomes the 
+            //// triangles origin
+            //a -= p;
+            //b -= p;
+            //c -= p;
+
+            //// The point should be moved too, so they are both
+            //// relative, but because we don't use p in the
+            //// equation anymore, we don't need it!
+            //// p -= p;
+
+            //// Compute the normal vectors for triangles:
+            //// u = normal of PBC
+            //// v = normal of PCA
+            //// w = normal of PAB
+
+            //vector u = cross(b, c); 
+            //vector v = cross(c, a); 
+            //vector w = cross(a, b);
+
+            //vector originalArea = cross(b - a, c - a);
+
+            //if ( length_squared(u + v + w - originalArea) < epsilon )
+            //    return true;
+
+            ////// Test to see if the normals are facing 
+            ////// the same direction, return false if not
+            ////if (dot(u, v) < 0.0f) 
+            ////{
+            ////    return false;
+            ////}
+
+            ////if (dot(u, w) < 0.0f)
+            ////{
+            ////    return false;
+            ////}
+
+            //// All normals facing the same way, return true
+            ////return true;
+            //
+            //return false;
         }
 
         bool point_plane(point const& point, plane const& plane)
@@ -182,7 +229,6 @@ namespace geom
             //std::cout << dot(point, plane.normal) << " " << plane.dist << std::endl;
             return epsilon_test(dot(point, plane.normal) - plane.dist);
         }
-
 
 
         RaycastResult ray_plane(ray const& ray, plane const& plane)
@@ -208,7 +254,7 @@ namespace geom
 
             // positive time means ray start position is in-front of plane
             // negative time means ray start position is behind the plane.
-            time_type entry_time = - (ray_dot_normal + plane.dist) / dir_dot_normal;
+            time_type entry_time = (plane.dist - ray_dot_normal) / dir_dot_normal;
             point entry_pos = ray.point + entry_time * ray_dir;
             
             // only one point when hitting the plane therefore entry == exit
@@ -302,7 +348,8 @@ namespace geom
         {
             //ray triangle using ray-plane + point-aabb.
             vector plane_normal = cross(triangle.b - triangle.a, triangle.c - triangle.a);  // ab x ac
-            plane plane_formed_by_triangle = { plane_normal, - dot(triangle.a, plane_normal) };
+            plane_normal = normalize(plane_normal);
+            plane plane_formed_by_triangle = { plane_normal, dot(triangle.a, plane_normal) };
             RaycastResult res = ray_plane(ray, plane_formed_by_triangle);
             
             if (res.intersect == false)
@@ -341,7 +388,8 @@ namespace geom
             if (proj < 0)
                 return false;
 
-            auto rejection_vector = static_cast<point>(-point_to_sphere + (dir * proj));
+            auto rejection_vector = static_cast<point>(ray.point + (dir * proj) - sphere.center);
+            //auto rejection_vector = static_cast<point>(-point_to_sphere + (dir * proj));
             auto rej_vec_len_sqr = length_squared(rejection_vector);
             if (rej_vec_len_sqr <= radius_squared)
                 return true;
@@ -350,14 +398,22 @@ namespace geom
         }
 
 
+
         bool plane_aabb(plane const& plane, aabb const& aabb)
         {
             // these two lines not necessary wit ha (center, extents) AABB representation
-            vector center = (aabb.max + aabb.min) * 0.5f;   // compute AABB center
+            vector center = (aabb.max + aabb.min) * value_type{ 0.5 };   // compute AABB center
             vector extents = aabb.max - center;   // compute positive extents
 
             // Compute the projection interval radius of aabb onto L(t) = aabb.c + t * plane2d.n
-            value_type r = extents[0] * std::abs(plane.normal[0]) + extents[1] * std::abs(plane.normal[1]) + extents[2] * std::abs(plane.normal[2]);
+            value_type r = 0;
+            for (size_type i = 0; i < dim; ++i)
+            {
+                r += extents[i] * std::abs(plane.normal[i]);
+            }
+            
+            //extents[0] * std::abs(plane.normal[0]) + extents[1] * std::abs(plane.normal[1]) + extents[2] * std::abs(plane.normal[2]);
+             
             // Compute distance of box center from plane
             value_type s = dot(plane.normal, center) - plane.dist;
 
@@ -369,7 +425,7 @@ namespace geom
         {
             // For a normalized plane ( plane2d.normal = 1 ), evaluating the plane equation
             value_type dist = dot(sphere.center, plane.normal) - plane.dist;
-            // If sphere center within +/-radius from plane, plane intersects sphere
+            // If sphere center within +/- radius from plane, plane intersects sphere
             return std::abs(dist) <= sphere.radius;
         }
     }
