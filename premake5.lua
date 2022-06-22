@@ -6,28 +6,28 @@
 -- where the files are output to
 outputdir = "%{cfg.buildcfg}-%{cfg.system}-%{cfg.architecture}"
 
-workspace "Geometry Toolbox"
+-- workspace "Geometry Toolbox"
     
-    architecture "x86_64"
-    startproject "geom"     -- set startup project
-    toolset "v142"          -- toolset v142 = visual studio 2019
+--     architecture "x86_64"
+--     startproject "geom"     -- set startup project
+--     toolset "v142"          -- toolset v142 = visual studio 2019
 
-    configurations
-    {
-        "Debug",
-        "Release",
-    }
+--     configurations
+--     {
+--         "Debug",
+--         "Release",
+--     }
 
-    flags
-    {
-        "MultiProcessorCompile", -- enable multicore compilation
-    }
+--     flags
+--     {
+--         "MultiProcessorCompile", -- enable multicore compilation
+--     }
 
 project "geom"
     kind "StaticLib"
     language "C++"
-    cppdialect "C++20"
-    staticruntime "off"
+    cppdialect "C++latest"
+    staticruntime "on"
     warnings "Extra" -- Set warnings level to 4 for this project
     
     -- Engine output directory
@@ -49,14 +49,14 @@ project "geom"
     }
 
     filter "system:windows"
-        cppdialect "C++20"
-        staticruntime "off"
+        cppdialect "C++latest"
+        staticruntime "on"
         systemversion "latest"
 
     filter "configurations:Debug"
-        defines "DEBUG"
+        --defines "DEBUG"
         symbols "On"
     
     filter "configurations:Release"
-        defines "RELEASE"
+        --defines "RELEASE"
         optimize "On"
