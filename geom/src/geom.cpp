@@ -1,9 +1,9 @@
-#include "SHpch.h"
-
 #include "geom.h"
 
 #include <iostream>     // std::cout
 #include <algorithm>    // std::min/std::max, std::abs
+#include <map>          // std::map
+
 
 // standard geometry function implementation
 namespace geom
@@ -11,6 +11,16 @@ namespace geom
     bool epsilon_test(value_type value)
     {
         return std::abs(value) <= epsilon;
+    }
+
+    value_type min(value_type lhs, value_type rhs)
+    {
+        return lhs < rhs ? lhs : rhs;
+    }
+    
+    value_type max(value_type lhs, value_type rhs)
+    {
+        return lhs > rhs ? lhs : rhs;
     }
 
     value_type dot(vector ptA, vector ptB)
@@ -430,3 +440,435 @@ namespace geom
         }
     }
 }
+
+// bounding volume hierarchies
+namespace geom
+{
+    namespace bvh
+    {
+        aabb make_fitting_aabb(std::vector<point> const& vertices)
+        {
+            if (vertices.size() == 0)
+                return aabb{};
+
+            point smallest = vertices.front(), largest = vertices.front();
+
+            for (auto& vertex : vertices)
+            {
+                for (int i = 0; i < dim; ++i)
+                {
+                    smallest[i] = min(vertex[i], smallest[i]);
+                    largest[i] = max(vertex[i], largest[i]);
+                }
+            }
+
+            return { smallest, largest };
+        }
+
+        std::pair<point, point> most_separated_points_on_axis(std::vector<point> const& vertices, vector const& normal)
+        {
+            // First retrieve all the normals we will be dotting against
+            std::pair<point, point> extrema_points;
+            int min = 0, max = 0;
+            for (int i = 0; i < vertices.size(); ++i)
+            {
+                if (dot(vertices[i], normal) < dot(vertices[min], normal)) min = i;
+                if (dot(vertices[i], normal) > dot(vertices[max], normal)) max = i;
+            }
+            return { vertices[min], vertices[max] };
+        }
+
+        std::pair<point, point> most_separated_points_on_aabb(std::vector<point> const& vertices)
+        {
+            // First lets find the most extreme points along the principal axes
+            int minx = 0, miny = 0, minz = 0, maxx = 0, maxy = 0, maxz = 0;
+            for (int i = 1; i < vertices.size(); ++i)
+            {
+                if (vertices[i].x < vertices[minx].x) minx = i;
+                if (vertices[i].y < vertices[miny].y) miny = i;
+                if (vertices[i].z < vertices[minz].z) minz = i;
+
+                if (vertices[i].x > vertices[maxx].x) maxx = i;
+                if (vertices[i].y > vertices[maxy].y) maxy = i;
+                if (vertices[i].z > vertices[maxz].z) maxz = i;
+            }
+
+            // Compute the squared distances for the three pairs of points
+            value_type distance_squared_x = distance_sqaured(vertices[maxx], vertices[minx]);
+            value_type distance_squared_y = distance_sqaured(vertices[maxy], vertices[miny]);
+            value_type distance_squared_z = distance_sqaured(vertices[maxz], vertices[minz]);
+
+            // the 2 furthest points
+            point min, max;
+
+            min = vertices[minx];
+            max = vertices[maxx];
+
+            if (distance_squared_y > distance_squared_x && distance_squared_y > distance_squared_z)
+            {
+                max = vertices[maxy];
+                min = vertices[miny];
+            }
+
+            if (distance_squared_z > distance_squared_x && distance_squared_z > distance_squared_y)
+            {
+                max = vertices[maxz];
+                min = vertices[minz];
+            }
+
+            return { min, max };
+        }
+
+        sphere make_sphere_from_distant_points(std::vector<point> const& vertices)
+        {
+            auto [min, max] = most_separated_points_on_aabb(vertices);
+
+            point center = (max - min) * 0.5f;
+            value_type radius = length(max - center);
+            return { center, radius };
+        }
+
+        void grow_sphere(sphere& sphere, point const vertex)
+        {
+            // compute squared distance between point and sphere center
+            value_type dist_squared = distance_sqaured(vertex, sphere.center);
+            // only update if sphere if point is outside it
+            if (sphere.radius * sphere.radius < dist_squared)
+            {
+                value_type new_dist = std::sqrt(dist_squared);
+                value_type new_radius = (sphere.radius + new_dist) * 0.5f;
+                value_type k = (new_radius - sphere.radius) / new_dist;
+                sphere.radius = new_radius;
+                sphere.center += new_dist * k;
+            }
+        }
+
+        sphere make_ritters_sphere(std::vector<point> const& vertices)
+        {
+            sphere sphere = make_sphere_from_distant_points(vertices);
+
+            // Grow sphere to include all points
+            for (auto& vertex : vertices)
+            {
+                grow_sphere(sphere, vertex);
+            }
+
+            return sphere;
+        }
+
+        // covariance matrix is always symmetric
+        matrix covariance_matrix(std::vector<point> const& vertices)
+        {
+            assert(vertices.size() == 0, "size of vector should not be zero!");
+
+            // one over size
+            value_type oon = 1.f / vertices.size();
+            point center_of_mass{ 0 };
+            value_type e00, e11, e22, e01, e02, e12;
+
+            // compute the center of mass (centroid) of the points
+            for (auto& vertex : vertices)
+                center_of_mass += vertex;
+            center_of_mass *= oon;
+
+            // compute covariance elements;
+            e00 = e11 = e22 = e01 = e02 = e12 = 0.f;
+            for (auto& vertex : vertices)
+            {
+                // translate points so center of mass is at origin
+                point p = vertex - center_of_mass;
+
+                // compute covariance of translated points
+                e00 += p.x * p.x;
+                e11 += p.y * p.y;
+                e22 += p.z * p.z;
+
+                // only need to compute one side of the matrix triangle because result is symmetric matrix
+                e01 += p.x * p.y;
+                e02 += p.x * p.z;
+                e12 += p.y * p.z;
+            }
+
+            matrix result;
+            // Fill in the covariance matrix elements
+            result[0][0] = e00 * oon;
+            result[1][1] = e11 * oon;
+            result[2][2] = e22 * oon;
+            result[0][1] = result[1][0] = e01 * oon;
+            result[0][2] = result[2][0] = e02 * oon;
+            result[1][2] = result[2][1] = e12 * oon;
+
+            return result;
+        }
+
+        sin_cos_pair symschur2(matrix const& a, int p, int q)
+        {
+            value_type sin, cos;
+            if (epsilon_test(a[p][q]))
+            {
+                value_type r = (a[q][q] - a[p][p]) / (2.0f * a[p][q]);
+                value_type t;
+                if (r >= 0.f)
+                    t = 1.f / (r + sqrt(1.f + r * r));
+                else
+                    t = -1.f / (-r + sqrt(1.f + r * r));
+                cos = 1.f / sqrt(1.f + t * t);
+                sin = t * cos;
+            }
+            else
+            {
+                cos = 1.f;
+                sin = 0.f;
+            }
+
+            return { sin, cos };
+        }
+
+        // Computes the eigenvectors and eigenvalues of the symmetric matrix A using
+        // the classic Jacobi method of iteratively updating A as A = J^T * A * J,
+        // where J = J(p, q, theta) is the Jacobi rotation matrix
+        //
+        // On exit, v will contain the eigenvectors, and the diagonal elements
+        // of a are the corresponding eigenvalues.
+        //
+        // See Golub, Van Loan, Matrix Computations, 3rd edition, pg 428
+        void jacobi(matrix& a, matrix& v)
+        {
+            int i, j, n, p, q;
+            float prevoff, c, s;
+            matrix J, b, t;
+            // Initialize v to identify matrix
+            for (i = 0; i < dim; i++)
+            {
+                for (j = 0; j < dim; ++j)
+                {
+                    v[i][j] = 0.f;
+                }
+                //v[i][0] = v[i][1] = v[i][2] = 0.0f;
+                v[i][i] = 1.0f;
+            }
+            // Repeat for some maximum number of iterations
+            const int MAX_ITERATIONS = 50;
+            for (n = 0; n < MAX_ITERATIONS; n++)
+            {
+                // Find largest off-diagonal absolute element a[p][q]
+                p = 0; q = 1;
+                for (i = 0; i < 3; i++)
+                {
+                    for (j = 0; j < 3; j++)
+                    {
+                        if (i == j) continue;
+                        if (abs(a[i][j]) > abs(a[p][q]))
+                        {
+                            p = i;
+                            q = j;
+                        }
+                    }
+                }
+                // Compute the Jacobi rotation matrix J(p, q, theta)
+                // (This code can be optimized for the three different cases of rotation)
+                std::tie(c, s) = symschur2(a, p, q);
+
+                for (i = 0; i < 3; i++)
+                {
+                    J[i][0] = J[i][1] = J[i][2] = 0.0f;
+                    J[i][i] = 1.0f;
+                }
+
+                J[p][p] = c; J[p][q] = s;
+                J[q][p] = -s; J[q][q] = c;
+                // Cumulate rotations into what will contain the eigenvectors
+                v = v * J;
+                // Make ’a’ more diagonal, until just eigenvalues remain on diagonal
+                a = (J.Transpose() * a) * J;
+                // Compute "norm" of off-diagonal elements
+                float off = 0.0f;
+                for (i = 0; i < dim; i++)
+                {
+                    for (j = 0; j < dim; j++)
+                    {
+                        if (i == j) continue;
+                        off += a[i][j] * a[i][j];
+                    }
+                }
+                /* off = sqrt(off); not needed for norm comparison */
+                // Stop when norm no longer decreasing
+                if (n > 2 && off >= prevoff)
+                    return;
+                prevoff = off;
+            }
+        }
+
+        sphere make_eigen_sphere(std::vector<point> const& vertices)
+        {
+            assert(vertices.size() == 0, "size of vector should not be zero!");
+
+            matrix m, v;
+
+            // Compute the covariance matrix m
+            m = covariance_matrix(vertices);
+            // Decompose it into eigen vectors (in v) and eigenvalues (in m)
+            jacobi(m, v);
+
+            // Find the component with largest magnitude and eigen value(largest spread)
+            vector e;
+            int maxc = 0;
+            value_type maxf, maxe = abs(m[0][0]);
+            if ((maxf = abs(m[1][1]) > maxe)) maxc = 1, maxe = maxf;
+            if ((maxf = abs(m[2][2]) > maxe)) maxc = 2, maxe = maxf;
+            e[0] = v[0][maxc];
+            e[1] = v[1][maxc];
+            e[2] = v[2][maxc];
+
+            // Find the most extreme points along direction 'e'
+            auto [min, max] = most_separated_points_on_axis(vertices, e);
+            value_type dist = length(max - min);
+            value_type radius = dist * 0.5f;
+            point center = (min + max) * 0.5f;
+            return { center, radius };
+        }
+
+        sphere make_ritter_eigen_sphere(std::vector<point> const& vertices)
+        {
+            // start with sphere from maximum spread
+            sphere ritter_eigen_sphere = make_eigen_sphere(vertices);
+
+            // Grow sphere to include all points
+            for (auto& vertex : vertices)
+                grow_sphere(ritter_eigen_sphere, vertex);
+
+            return ritter_eigen_sphere;
+        }
+
+        enum class larsons_index
+        {
+            EPOS_6, // aka ritters
+            EPOS_14,
+            EPOS_26,
+            EPOS_98,
+        };
+
+        static const std::map<larsons_index, std::vector<point>> larsons_normals =
+        {
+            {
+                // index
+                larsons_index::EPOS_6,  
+                // normals
+                {
+                    { 1, 0, 0},
+                    { 0, 1, 0},
+                    { 0, 0, 1}
+                }
+            },
+            {
+                // index
+                larsons_index::EPOS_14,
+                // normals
+                {
+                    { 1, 1, 1},
+                    { 1, 1,-1},
+                    { 1,-1, 1},
+                    { 1,-1,-1}
+                }
+            },
+            {
+                // index
+                larsons_index::EPOS_26,
+                // normals
+                {
+                    { 1, 1, 0},
+                    { 1,-1, 0},
+                    { 1, 0, 1},
+                    { 1, 0,-1},
+                    { 0, 1, 1},
+                    { 0, 1,-1},
+                }
+            },
+            {
+                // index
+                larsons_index::EPOS_98,
+                // normals
+                {
+                    // 1st set of 12
+                    { 0, 1, 2},
+                    { 0, 2, 1},
+                    { 1, 0, 2},
+                    { 2, 0, 1},
+                    { 1, 2, 0},
+                    { 2, 1, 0},
+                    
+                    { 0, 1,-2},
+                    { 0, 2,-1},
+                    { 1, 0,-2},
+                    { 2, 0,-1},
+                    { 1,-2, 0},
+                    { 2,-1, 0},
+
+                    // 2nd set of 12
+                    { 1, 1, 2},
+                    { 2, 1, 1},
+                    { 1, 2, 1},
+                    { 1,-1, 2},
+                    { 1, 1,-2},
+                    { 1,-1,-2},
+
+                    { 2,-1, 1},
+                    { 2, 1,-1},
+                    { 2,-1,-1},
+                    { 1,-2, 1},
+                    { 1, 2,-1},
+                    { 1,-2,-1},
+
+                    // 3rd set of 12
+                    { 2, 2, 1},
+                    { 1, 2, 2},
+                    { 2, 1, 2},
+                    { 2,-2, 1},
+                    { 2, 2,-1},
+                    { 2,-2,-1},
+
+                    { 1,-2, 2},
+                    { 1, 2,-2},
+                    { 1,-2,-2},
+                    { 2,-1, 2},
+                    { 2, 1,-2},
+                    { 2,-1,-2},
+                }
+            },
+        };
+        
+        std::pair<point, point> most_separated_points_on_larsons_normals(std::vector<point> const& vertices, larsons_index index)
+        {
+            // First retrieve all the normals we will be dotting against
+            std::vector<point> normals = larsons_normals.at(index);
+            std::vector<std::pair<point, point>> extrema_points;
+            for (auto& normal : normals)
+            {
+                int min = 0, max = 0;
+                for (int i = 0; i < vertices.size(); ++i)
+                {
+                    if(dot(vertices[i], normal) < dot(vertices[min], normal)) min = i;
+                    if(dot(vertices[i], normal) > dot(vertices[max], normal)) max = i;
+                }
+                extrema_points.emplace_back(vertices[min], vertices[max]);
+            }
+
+            std::pair<point, point> furthest_pair;
+            value_type current_min = maximum;
+            for (auto& [ptA, ptB] : extrema_points)
+            {
+                value_type new_dist = distance_sqaured(ptA, ptB);
+                if (new_dist < current_min)
+                {
+                    furthest_pair = { ptA, ptB };
+                    current_min = new_dist;
+                }
+            }
+
+            return furthest_pair;
+        }
+
+
+    }
+}
+

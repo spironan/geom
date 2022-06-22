@@ -130,5 +130,23 @@ int main()
         std::cout << "=========================================================================================\n";
     }
     
+    {
+        /*for (int i = 0; i < dim; ++i)
+        {
+            std::cout << i << std::endl;
+        }*/
+
+        //std:: objA, objB, objC, objD;
+        //std::vector<std::vector<point>> objects;
+        //std::vector<aabb> aabbs;
+        //for (auto& obj : objects)
+        //{
+        //    aabbs.emplace_back(bvh::make_fitting_aabb(obj));
+        //}
+        //bvh::Settings settings{ bvh::Heuristic::median_of_centers, bvh::EndCondition::n_nodes_reached, 1 };
+        //bvh::Hierarchy::construct_top_down<aabb>(aabbs, settings);
+        
+    }
+
     return 0;
 }
