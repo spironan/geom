@@ -310,7 +310,7 @@ namespace geom
             point entry_pos = ray.point + tmin * ray.dir;
             point exit_pos = ray.point + tmax * ray.dir;
 
-            return { tmax >= std::max(0.0f, tmin) /* && tmin < t; */ , tmin, tmax, entry_pos, exit_pos };
+            return { tmax >= std::max(value_type{0.0}, tmin) /* && tmin < t; */ , tmin, tmax, entry_pos, exit_pos };
         }
 
         RaycastResult ray_sphere(ray const& ray, sphere const& sphere)
@@ -532,6 +532,7 @@ namespace geom
         {
             // compute squared distance between point and sphere center
             value_type dist_squared = distance_sqaured(vertex, sphere.center);
+            assert(dist_squared != std::numeric_limits<value_type>::infinity());
             // only update if sphere if point is outside it
             if (sphere.radius * sphere.radius < dist_squared)
             {
@@ -539,7 +540,7 @@ namespace geom
                 value_type new_radius = (sphere.radius + new_dist) * 0.5f;
                 value_type k = (new_radius - sphere.radius) / new_dist;
                 sphere.radius = new_radius;
-                sphere.center += new_dist * k;
+                sphere.center += (vertex - sphere.center) * k;
             }
         }
 

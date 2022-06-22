@@ -5,7 +5,7 @@ using namespace geom;
 
 int main()
 {
-    using Vec3D         = Vector<float, 3>;
+    using Vec3D         = Vector<value_type, 3>;
     using Point3D       = Point<3>;
     using Sphere3D      = Sphere<3>;
     using Triangle3D    = Triangle<3>;
