@@ -335,6 +335,14 @@ namespace geom
 
         sphere make_ritter_eigen_sphere(std::vector<point> const& vertices);
 
+        enum class larsons_index
+        {
+            EPOS_6, // aka ritters
+            EPOS_14,
+            EPOS_26,
+            EPOS_98,
+        };
+        sphere make_larson_sphere(std::vector<point> const& vertices, larsons_index index);
 
         template<typename volume>
         struct Node

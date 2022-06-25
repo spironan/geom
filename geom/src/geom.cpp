@@ -523,7 +523,7 @@ namespace geom
         {
             auto [min, max] = most_separated_points_on_aabb(vertices);
 
-            point center = (max - min) * 0.5f;
+            point center = (max + min) * 0.5f;
             value_type radius = length(max - center);
             return { center, radius };
         }
@@ -560,7 +560,7 @@ namespace geom
         // covariance matrix is always symmetric
         matrix covariance_matrix(std::vector<point> const& vertices)
         {
-            assert(vertices.size() == 0, "size of vector should not be zero!");
+            assert(vertices.size() != 0, "size of vector should not be zero!");
 
             // one over size
             value_type oon = 1.f / vertices.size();
@@ -605,7 +605,7 @@ namespace geom
         sin_cos_pair symschur2(matrix const& a, int p, int q)
         {
             value_type sin, cos;
-            if (epsilon_test(a[p][q]))
+            if (!epsilon_test(a[p][q]))
             {
                 value_type r = (a[q][q] - a[p][p]) / (2.0f * a[p][q]);
                 value_type t;
@@ -668,8 +668,9 @@ namespace geom
                 }
                 // Compute the Jacobi rotation matrix J(p, q, theta)
                 // (This code can be optimized for the three different cases of rotation)
-                std::tie(c, s) = symschur2(a, p, q);
+                std::tie(s, c) = symschur2(a, p, q);
 
+                // remove all values in j except for one side of the symmetry
                 for (i = 0; i < 3; i++)
                 {
                     J[i][0] = J[i][1] = J[i][2] = 0.0f;
@@ -702,7 +703,7 @@ namespace geom
 
         sphere make_eigen_sphere(std::vector<point> const& vertices)
         {
-            assert(vertices.size() == 0, "size of vector should not be zero!");
+            assert(vertices.size() != 0, "size of vector should not be zero!");
 
             matrix m, v;
 
@@ -741,14 +742,6 @@ namespace geom
             return ritter_eigen_sphere;
         }
 
-        enum class larsons_index
-        {
-            EPOS_6, // aka ritters
-            EPOS_14,
-            EPOS_26,
-            EPOS_98,
-        };
-
         static const std::map<larsons_index, std::vector<point>> larsons_normals =
         {
             {
@@ -758,7 +751,7 @@ namespace geom
                 {
                     { 1, 0, 0},
                     { 0, 1, 0},
-                    { 0, 0, 1}
+                    { 0, 0, 1},
                 }
             },
             {
@@ -766,10 +759,14 @@ namespace geom
                 larsons_index::EPOS_14,
                 // normals
                 {
+                    { 1, 0, 0},
+                    { 0, 1, 0},
+                    { 0, 0, 1},
+
                     { 1, 1, 1},
                     { 1, 1,-1},
                     { 1,-1, 1},
-                    { 1,-1,-1}
+                    { 1,-1,-1},
                 }
             },
             {
@@ -777,6 +774,15 @@ namespace geom
                 larsons_index::EPOS_26,
                 // normals
                 {
+                    { 1, 0, 0},
+                    { 0, 1, 0},
+                    { 0, 0, 1},
+
+                    { 1, 1, 1},
+                    { 1, 1,-1},
+                    { 1,-1, 1},
+                    { 1,-1,-1},
+
                     { 1, 1, 0},
                     { 1,-1, 0},
                     { 1, 0, 1},
@@ -790,6 +796,22 @@ namespace geom
                 larsons_index::EPOS_98,
                 // normals
                 {
+                    { 1, 0, 0},
+                    { 0, 1, 0},
+                    { 0, 0, 1},
+
+                    { 1, 1, 1},
+                    { 1, 1,-1},
+                    { 1,-1, 1},
+                    { 1,-1,-1},
+
+                    { 1, 1, 0},
+                    { 1,-1, 0},
+                    { 1, 0, 1},
+                    { 1, 0,-1},
+                    { 0, 1, 1},
+                    { 0, 1,-1},
+
                     // 1st set of 12
                     { 0, 1, 2},
                     { 0, 2, 1},
@@ -846,7 +868,7 @@ namespace geom
             for (auto& normal : normals)
             {
                 int min = 0, max = 0;
-                for (int i = 0; i < vertices.size(); ++i)
+                for (int i = 1; i < vertices.size(); ++i)
                 {
                     if(dot(vertices[i], normal) < dot(vertices[min], normal)) min = i;
                     if(dot(vertices[i], normal) > dot(vertices[max], normal)) max = i;
@@ -855,21 +877,41 @@ namespace geom
             }
 
             std::pair<point, point> furthest_pair;
-            value_type current_min = maximum;
+            value_type current_max = minimum;
             for (auto& [ptA, ptB] : extrema_points)
             {
                 value_type new_dist = distance_sqaured(ptA, ptB);
-                if (new_dist < current_min)
+                if (new_dist > current_max)
                 {
                     furthest_pair = { ptA, ptB };
-                    current_min = new_dist;
+                    current_max = new_dist;
                 }
             }
 
             return furthest_pair;
         }
 
+        sphere make_sphere_from_larsons_normals(std::vector<point> const& vertices, larsons_index index)
+        {
+            auto [min, max] = most_separated_points_on_larsons_normals(vertices, index);
 
+            point center = (max + min) * 0.5f;
+            value_type radius = length(max - center);
+            return { center, radius };
+        }
+
+        sphere make_larson_sphere(std::vector<point> const& vertices, larsons_index index)
+        {
+            sphere sphere = make_sphere_from_larsons_normals(vertices, index);
+
+            // Grow sphere to include all points
+            for (auto& vertex : vertices)
+            {
+                grow_sphere(sphere, vertex);
+            }
+
+            return sphere;
+        }
     }
 }
 
