@@ -5,6 +5,9 @@
 #include <cassert>
 #include <vector>       // std::vector
 #include <algorithm>    // std::sort
+#include <memory>       
+#include <limits>
+
 namespace geom
 {
     using size_type = size_t;
@@ -348,30 +351,30 @@ namespace geom
         struct Node
         {
             // Leaf Node construction
-            Node(volume volume)
-                : Volume { volume }
+            Node(/*volume volume*/)
+                : Volume{ volume{} }
                 , Left { nullptr }
                 , Right { nullptr }
-                , Parent { nullptr }
-                , Height { 0 }
+                //, Parent { nullptr }
+                , Depth{ 0 }
             {
             }
 
-            //Inner-Node Construction
-            Node(Node* left, Node* right)
-                : Left { left }
-                , Right { right }
-                , Parent { nullptr }
-                , Height { left->Height - 1 }
-                , Volume { }
-            {
-                Left->Parent = Right->Parent = this;
-            }
+            ////Inner-Node Construction
+            //Node(Node* left, Node* right)
+            //    : Left { left }
+            //    , Right { right }
+            //    , Parent { nullptr }
+            //    , Depth{ left->Depth - 1 }
+            //    , Volume { }
+            //{
+            //    Left->Parent = Right->Parent = this;
+            //}
 
             Node* Left;
             Node* Right;
-            Node* Parent;
-            std::size_t Height;
+            //Node* Parent;
+            std::size_t Depth;
 
             volume Volume;
             bool Leaf;
@@ -419,15 +422,72 @@ namespace geom
             template<typename volume>
             static Node<volume>* construct_top_down(std::vector<volume>& insertionData, Settings Settings)
             {
-                if (ShouldTerminate(Settings, insertionData))
+                assert(insertionData.size() > 0);
+                Node<volume>* root = nullptr;
+                std::size_t depth = 0;
+                root = construct_top_down_recursion(&root, insertionData, Settings, depth);
+
+                return root;
+            }
+        
+        private:
+            template<typename volume>
+            static Node<volume>* construct_top_down_recursion(Node<volume>** tree, std::vector<volume>& insertionData, Settings Settings, std::size_t depth)
+            {
+                assert(insertionData.size() > 0);
+
+                const int MIN_OBJECTS_PER_LEAF = 1;
+                Node<volume>* pNode = new Node<volume>();
+                *tree = pNode;
+
+                pNode->Depth = depth++;
+                pNode->Volume = ComputeBoundingVolume(insertionData);
+                if (insertionData.size() <= MIN_OBJECTS_PER_LEAF)
+                {
+                    pNode->Leaf = true;
+                    //pNode->
+                }
+                else
+                {
+                    pNode->Leaf = false;
+                    auto[leftSet, rightSet] = PartitionObjects(Settings, insertionData);
+                    construct_top_down_recursion(&pNode->Left, leftSet, Settings, depth);
+                    construct_top_down_recursion(&pNode->Right, rightSet, Settings, depth);
+                }
+
+
+                /*if (ShouldTerminate(Settings, insertionData))
                     return new Node(insertionData.front());
 
                 std::vector<volume> left, right;
                 PartitionObjects(Settings, insertionData, left, right);
-                return new Node(construct_top_down<volume>(left, Settings), construct_top_down<volume>(right, Settings));
+                return new Node(construct_top_down<volume>(left, Settings), construct_top_down<volume>(right, Settings));*/
+                return pNode;
             }
-        
-        private:
+
+            template<typename volume>
+            static volume ComputeBoundingVolume(std::vector<volume> const& insertionData)
+            {
+                if constexpr (std::is_same_v<volume, sphere>)
+                {
+
+                }
+                else if constexpr (std::is_same_v<volume, aabb>)
+                {
+                    std::vector<point> vertices;
+                    
+                    for (auto& aabb : insertionData)
+                    {
+                        vertices.emplace_back(aabb.min);
+                        vertices.emplace_back(aabb.max);
+                    }
+
+                    return make_fitting_aabb(vertices);
+                }
+
+                assert(false);
+            }
+
             static bool ShouldTerminate(Settings settings, std::vector<aabb>& insertionData) 
             {
                 switch (settings.end_condition)
@@ -448,21 +508,35 @@ namespace geom
                 return true; 
             }
 
-            static void PartitionObjects(Settings settings, std::vector<aabb>& insertionData, std::vector<aabb>& left, std::vector<aabb>& right)
+            static std::pair<std::vector<aabb>, std::vector<aabb>> PartitionObjects(Settings settings, std::vector<aabb>& insertionData)
             {
+                std::vector<aabb> leftSet, rightSet;
+
                 switch (settings.heuristics)
                 {
                 case Heuristic::median_of_centers:
                     {
-                        //sort data by axis
-                        std::sort(insertionData.begin(), insertionData.end(), [](auto&& lhs, auto&& rhs) 
-                            {
-                                auto lhs_center = (lhs.min + lhs.max) * 0.5f;
-                                auto rhs_center = (rhs.min + rhs.max) * 0.5f;
-                                return lhs_center.x < rhs_center.x;
-                            });
-                        std::copy(insertionData.begin(), insertionData.begin() + insertionData.size() / 2, left.begin());
-                        std::copy(insertionData.begin() + insertionData.size() / 2, insertionData.end(), right.begin());
+                        //sort data by axis of our liking
+                        vector axis = { 0, 1, 0 };
+
+                        std::sort(insertionData.begin(), insertionData.end(), [&](auto&& lhs, auto&& rhs) 
+                        {
+                            auto lhs_center = (lhs.min + lhs.max) * 0.5f;
+                            auto rhs_center = (rhs.min + rhs.max) * 0.5f;
+
+                            auto leftDot = dot(lhs_center, axis);
+                            auto rightDot = dot(rhs_center, axis);
+
+                            return leftDot < rightDot;
+                        });
+
+                        std::size_t leftSize = insertionData.size() / 2;
+                        std::size_t rightSize = insertionData.end() - (insertionData.begin() + leftSize);
+                        leftSet.resize(leftSize);
+                        rightSet.resize(rightSize);
+                        std::copy(insertionData.begin(), insertionData.begin() + insertionData.size() / 2, leftSet.begin());
+                        std::copy(insertionData.begin() + insertionData.size() / 2, insertionData.end(), rightSet.begin());
+                        
                     }
                     break;
                 case Heuristic::median_of_extents:
@@ -488,14 +562,14 @@ namespace geom
                             // we only care about their y values.
                             bv_center.x = bv_center.z = 0.0;
                             split_point.x = split_point.z = 0.0;
-                            if (dot(bv_center, split_point) > 0.0)
+                            /*if (dot(bv_center, split_point) > 0.0)
                             {
                                 left.emplace_back(bv);
                             }
                             else
                             {
                                 right.emplace_back(bv);
-                            }
+                            }*/
                         }
                     }
                     break;
@@ -519,14 +593,14 @@ namespace geom
                             // we only care about their y values.
                             bv_center.x = bv_center.z = 0.0;
                             split_point.x = split_point.z = 0.0;
-                            if (dot(bv_center, split_point) > 0.0)
+                            /*if (dot(bv_center, split_point) > 0.0)
                             {
                                 left.emplace_back(bv);
                             }
                             else
                             {
                                 right.emplace_back(bv);
-                            }
+                            }*/
                         }
                     }
                     break;
@@ -551,6 +625,8 @@ namespace geom
                 default:
                     break;
                 }
+
+                return { leftSet, rightSet };
             }
 
         };
