@@ -313,26 +313,8 @@ namespace geom
         aabb make_fitting_aabb(std::vector<point> const& vertices);
         sphere make_ritters_sphere(std::vector<point> const& vertices);
         
-        // covariance matrix is always symmetric
-        //matrix covariance_matrix(std::vector<point> const& vertices);;
-
-        // 2-by-2 symmetric schur decomposition. Given an n-by-n symmetric matrix
-        // and indices p, q such that 1 <= p < q <= n, computes a sine-cosine pair
-        // (s,c) that will serve to forma Jacobi rotation matrix
-        //
-        // See Golub, Van Loan, Matrix Computations, 3rd edition, pg428
         using sin_cos_pair = std::pair<value_type, value_type>;
         //sin_cos_pair symschur2(matrix const& a, int p, int q);
-
-        // Computes the eigenvectors and eigenvalues of the symmetric matrix A using
-        // the classic Jacobi method of iteratively updating A as A = J^T * A * J,
-        // where J = J(p, q, theta) is the Jacobi rotation matrix
-        //
-        // On exit, v will contain the eigenvectors, and the diagonal elements
-        // of a are the corresponding eigenvalues.
-        //
-        // See Golub, Van Loan, Matrix Computations, 3rd edition, pg 428
-        //void jacobi(matrix& a, matrix& v);
 
         sphere make_eigen_sphere(std::vector<point> const& vertices);
 
@@ -351,28 +333,16 @@ namespace geom
         struct Node
         {
             // Leaf Node construction
-            Node(/*volume volume*/)
+            Node()
                 : Volume{ volume{} }
                 , Left { nullptr }
                 , Right { nullptr }
-                //, Parent { nullptr }
                 , Depth{ 0 }
             {
             }
 
-            ////Inner-Node Construction
-            //Node(Node* left, Node* right)
-            //    : Left { left }
-            //    , Right { right }
-            //    , Parent { nullptr }
-            //    , Depth{ left->Depth - 1 }
-            //    , Volume { }
-            //{
-            //    Left->Parent = Right->Parent = this;
-            //}
-
-            Node* Left;
-            Node* Right;
+            std::shared_ptr<Node> Left;
+            std::shared_ptr<Node> Right;
             //Node* Parent;
             std::size_t Depth;
 
@@ -420,48 +390,88 @@ namespace geom
         {
         public:
             template<typename volume>
-            static Node<volume>* construct_top_down(std::vector<volume>& insertionData, Settings Settings)
+            static std::shared_ptr<Node<volume>> construct_top_down(std::vector<volume>& insertionData, Settings Settings)
             {
                 assert(insertionData.size() > 0);
-                Node<volume>* root = nullptr;
+                std::shared_ptr<Node<volume>> root = nullptr;
                 std::size_t depth = 0;
                 root = construct_top_down_recursion(&root, insertionData, Settings, depth);
 
                 return root;
             }
-        
+
+            template<typename volume>
+            static std::shared_ptr<Node<volume>> construct_bottom_up(std::vector<volume>& insertionData, Settings Settings)
+            {
+                assert(insertionData.size() > 0);
+
+                std::vector<std::shared_ptr<Node<volume>>> pNodes;
+                /*std::size_t numObjects = insertionData.size();
+                std::shared_ptr<Node<volume>> pNodes = new Node<volume>(insertionData.size());*/
+                for (auto& vol : insertionData)
+                {
+                    std::shared_ptr<Node<volume>> newNode = std::make_shared<Node<volume>>();
+                    newNode->Leaf = true;
+                    newNode->Left = newNode->Right = nullptr;
+                    newNode->Volume = vol;
+                    pNodes.emplace_back(newNode);
+                }
+
+                std::size_t i, j;
+                // Merge pairs together until just the root object left
+                while (pNodes.size() > 1)
+                {
+                    // Find indices of the two "nearest" nodes, based on some criterion
+                    FindNodesToMerge<volume>(pNodes, i, j);
+                    // Group nodes i and j together under a new internal node
+                    std::shared_ptr<Node<volume>> pPair = std::make_shared<Node<volume>>();
+                    //pPair->type = NODE;
+                    pPair->Left = pNodes[i];
+                    pPair->Right = pNodes[j];
+                    pPair->Depth = std::max(pNodes[i]->Depth, pNodes[j]->Depth) + 1;
+                    // Compute a bounding volume for the two nodes
+                    pPair->Volume = ComputeBoundingVolume<volume>({ pNodes[i]->Volume, pNodes[j]->Volume });
+
+                    // Remove the two nodes from the active set and add in the new node.
+                    // Done by putting new node at index ’min’ and copying last entry to ’max’
+                    int min = i, max = j;
+                    if (i > j) min = j, max = i;
+                    pNodes[min] = pPair;
+                    std::swap(pNodes[max], pNodes.back());
+                    
+                    pNodes.pop_back();
+                    //numObjects--;
+                }
+                // Free temporary storage and return root of tree
+                std::shared_ptr<Node<volume>> root = pNodes.front();
+
+                return root;
+            }
+
         private:
             template<typename volume>
-            static Node<volume>* construct_top_down_recursion(Node<volume>** tree, std::vector<volume>& insertionData, Settings Settings, std::size_t depth)
+            static std::shared_ptr<Node<volume>> construct_top_down_recursion(std::shared_ptr<Node<volume>>* tree, std::vector<volume>& insertionData, Settings Settings, std::size_t depth)
             {
                 assert(insertionData.size() > 0);
 
                 const int MIN_OBJECTS_PER_LEAF = 1;
-                Node<volume>* pNode = new Node<volume>();
+                std::shared_ptr<Node<volume>> pNode = std::make_shared<Node<volume>>();
                 *tree = pNode;
 
                 pNode->Depth = depth++;
-                pNode->Volume = ComputeBoundingVolume(insertionData);
+                pNode->Volume = ComputeBoundingVolume<volume>(insertionData);
                 if (insertionData.size() <= MIN_OBJECTS_PER_LEAF)
                 {
                     pNode->Leaf = true;
-                    //pNode->
                 }
                 else
                 {
                     pNode->Leaf = false;
-                    auto[leftSet, rightSet] = PartitionObjects(Settings, insertionData);
-                    construct_top_down_recursion(&pNode->Left, leftSet, Settings, depth);
-                    construct_top_down_recursion(&pNode->Right, rightSet, Settings, depth);
+                    auto[leftSet, rightSet] = PartitionObjects<volume>(Settings, insertionData);
+                    construct_top_down_recursion<volume>(&pNode->Left, leftSet, Settings, depth);
+                    construct_top_down_recursion<volume>(&pNode->Right, rightSet, Settings, depth);
                 }
 
-
-                /*if (ShouldTerminate(Settings, insertionData))
-                    return new Node(insertionData.front());
-
-                std::vector<volume> left, right;
-                PartitionObjects(Settings, insertionData, left, right);
-                return new Node(construct_top_down<volume>(left, Settings), construct_top_down<volume>(right, Settings));*/
                 return pNode;
             }
 
@@ -470,7 +480,19 @@ namespace geom
             {
                 if constexpr (std::is_same_v<volume, sphere>)
                 {
+                    std::vector<point> vertices;
 
+                    for (auto& sphere : insertionData)
+                    {
+                        vertices.emplace_back(sphere.center - point{sphere.radius, 0, 0});
+                        vertices.emplace_back(sphere.center + point{sphere.radius, 0, 0});
+                        vertices.emplace_back(sphere.center - point{0, sphere.radius, 0});
+                        vertices.emplace_back(sphere.center + point{0, sphere.radius, 0});
+                        vertices.emplace_back(sphere.center - point{0, 0, sphere.radius});
+                        vertices.emplace_back(sphere.center + point{0, 0, sphere.radius});
+                    }
+
+                    return make_ritter_eigen_sphere(vertices);
                 }
                 else if constexpr (std::is_same_v<volume, aabb>)
                 {
@@ -488,29 +510,10 @@ namespace geom
                 assert(false);
             }
 
-            static bool ShouldTerminate(Settings settings, std::vector<aabb>& insertionData) 
+            template<typename volume>
+            static std::pair<std::vector<volume>, std::vector<volume>> PartitionObjects(Settings settings, std::vector<volume>& insertionData)
             {
-                switch (settings.end_condition)
-                {
-                case EndCondition::n_nodes_reached:
-                    {
-                        return insertionData.size() <= settings.cutoff_amount;
-                    }
-                    break;
-                case EndCondition::max_depth:
-                    {
-                        return false;
-                        //return current_height <= settings.cutoff_amount;
-                    }
-                    break;
-                }
-
-                return true; 
-            }
-
-            static std::pair<std::vector<aabb>, std::vector<aabb>> PartitionObjects(Settings settings, std::vector<aabb>& insertionData)
-            {
-                std::vector<aabb> leftSet, rightSet;
+                std::vector<volume> leftSet, rightSet;
 
                 switch (settings.heuristics)
                 {
@@ -521,13 +524,26 @@ namespace geom
 
                         std::sort(insertionData.begin(), insertionData.end(), [&](auto&& lhs, auto&& rhs) 
                         {
-                            auto lhs_center = (lhs.min + lhs.max) * 0.5f;
-                            auto rhs_center = (rhs.min + rhs.max) * 0.5f;
+                            if constexpr (std::is_same_v<volume, aabb>)
+                            {
+                                auto lhs_center = (lhs.min + lhs.max) * 0.5f;
+                                auto rhs_center = (rhs.min + rhs.max) * 0.5f;
 
-                            auto leftDot = dot(lhs_center, axis);
-                            auto rightDot = dot(rhs_center, axis);
+                                auto leftDot = dot(lhs_center, axis);
+                                auto rightDot = dot(rhs_center, axis);
 
-                            return leftDot < rightDot;
+                                return leftDot < rightDot;
+                            }
+                            else if constexpr (std::is_same_v<volume, sphere>)
+                            {
+                                auto lhs_center = lhs.center;
+                                auto rhs_center = rhs.center;
+
+                                auto leftDot = dot(lhs_center, axis);
+                                auto rightDot = dot(rhs_center, axis);
+
+                                return leftDot < rightDot;
+                            }
                         });
 
                         std::size_t leftSize = insertionData.size() / 2;
@@ -542,66 +558,66 @@ namespace geom
                 case Heuristic::median_of_extents:
                     {
                         std::vector<vector> extents;
-                        for (auto& bv : insertionData)
-                        {
-                            extents.emplace_back(bv.min);
-                            extents.emplace_back(bv.max);
-                        }
-                        // sort extents based on y-axis
-                        std::sort(extents.begin(), extents.end(), [](auto&& lhs, auto&& rhs)
-                            {
-                                return lhs.y < rhs.y;
-                            });
+                        //for (auto& bv : insertionData)
+                        //{
+                        //    extents.emplace_back(bv.min);
+                        //    extents.emplace_back(bv.max);
+                        //}
+                        //// sort extents based on y-axis
+                        //std::sort(extents.begin(), extents.end(), [](auto&& lhs, auto&& rhs)
+                        //{
+                        //    return lhs.y < rhs.y;
+                        //});
 
-                        // split point based on median of all extents projected along y-axis
-                        vector split_point = extents[extents.size() / 2];
+                        //// split point based on median of all extents projected along y-axis
+                        //vector split_point = extents[extents.size() / 2];
 
-                        for (auto& bv : insertionData)
-                        {
-                            auto bv_center = (bv.min + bv.max) * 0.5f;
-                            // we only care about their y values.
-                            bv_center.x = bv_center.z = 0.0;
-                            split_point.x = split_point.z = 0.0;
-                            /*if (dot(bv_center, split_point) > 0.0)
-                            {
-                                left.emplace_back(bv);
-                            }
-                            else
-                            {
-                                right.emplace_back(bv);
-                            }*/
-                        }
+                        //for (auto& bv : insertionData)
+                        //{
+                        //    auto bv_center = (bv.min + bv.max) * 0.5f;
+                        //    // we only care about their y values.
+                        //    bv_center.x = bv_center.z = 0.0;
+                        //    split_point.x = split_point.z = 0.0;
+                        //    /*if (dot(bv_center, split_point) > 0.0)
+                        //    {
+                        //        left.emplace_back(bv);
+                        //    }
+                        //    else
+                        //    {
+                        //        right.emplace_back(bv);
+                        //    }*/
+                        //}
                     }
                     break;
                 case Heuristic::k_even_split:
                     {
                         std::vector<vector> extents;
-                        for (auto& bv : insertionData)
-                        {
-                            extents.emplace_back(bv.min);
-                            extents.emplace_back(bv.max);
-                        }
-                        vector axis = { 0,1,0 };
-                        auto [lowest, highest] = most_separated_points_on_axis(extents, axis);
-                        
-                        auto increments = (highest - lowest) / settings.evenly_spaced_points;
-                        vector split_point = lowest + settings.evenly_spaced_points / 2.0 * increments;
+                        //for (auto& bv : insertionData)
+                        //{
+                        //    extents.emplace_back(bv.min);
+                        //    extents.emplace_back(bv.max);
+                        //}
+                        //vector axis = { 0,1,0 };
+                        //auto [lowest, highest] = most_separated_points_on_axis(extents, axis);
+                        //
+                        //auto increments = (highest - lowest) / settings.evenly_spaced_points;
+                        //vector split_point = lowest + settings.evenly_spaced_points / 2.0 * increments;
 
-                        for (auto& bv : insertionData)
-                        {
-                            auto bv_center = (bv.min + bv.max) * 0.5f;
-                            // we only care about their y values.
-                            bv_center.x = bv_center.z = 0.0;
-                            split_point.x = split_point.z = 0.0;
-                            /*if (dot(bv_center, split_point) > 0.0)
-                            {
-                                left.emplace_back(bv);
-                            }
-                            else
-                            {
-                                right.emplace_back(bv);
-                            }*/
-                        }
+                        //for (auto& bv : insertionData)
+                        //{
+                        //    auto bv_center = (bv.min + bv.max) * 0.5f;
+                        //    // we only care about their y values.
+                        //    bv_center.x = bv_center.z = 0.0;
+                        //    split_point.x = split_point.z = 0.0;
+                        //    /*if (dot(bv_center, split_point) > 0.0)
+                        //    {
+                        //        left.emplace_back(bv);
+                        //    }
+                        //    else
+                        //    {
+                        //        right.emplace_back(bv);
+                        //    }*/
+                        //}
                     }
                     break;
 
@@ -629,6 +645,46 @@ namespace geom
                 return { leftSet, rightSet };
             }
 
+            template<typename volume>
+            static void FindNodesToMerge(std::vector<std::shared_ptr<Node<volume>>> const& pNodes, std::size_t& i, std::size_t& j)
+            {
+                // nearest neighbour with squared distance
+                value_type current_lowest = std::numeric_limits<value_type>::max();
+                for (std::size_t x = 0; x < pNodes.size(); ++x)
+                {
+                    for (std::size_t y = x + 1; y < pNodes.size(); ++y)
+                    {
+                        if constexpr (std::is_same_v<volume, aabb>)
+                        {
+                            auto lhs_center = pNodes[x]->Volume.min + pNodes[x]->Volume.max;
+                            auto rhs_center = pNodes[y]->Volume.min + pNodes[y]->Volume.max;
+
+                            auto sqDist = distance_sqaured(lhs_center, rhs_center);
+                            
+                            if (sqDist < current_lowest)
+                            {
+                                current_lowest = sqDist;
+                                i = x;
+                                j = y;
+                            }
+                        }
+                        else if constexpr (std::is_same_v<volume, sphere>)
+                        {
+                            auto lhs_center = pNodes[x]->Volume.center;
+                            auto rhs_center = pNodes[y]->Volume.center;
+
+                            auto sqDist = distance_sqaured(lhs_center, rhs_center);
+
+                            if (sqDist < current_lowest)
+                            {
+                                current_lowest = sqDist;
+                                i = x;
+                                j = y;
+                            }
+                        }
+                    }
+                }
+            }
         };
 
 
