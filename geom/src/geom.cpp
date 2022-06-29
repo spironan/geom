@@ -636,8 +636,8 @@ namespace geom
         void jacobi(matrix& a, matrix& v)
         {
             int i, j, n, p, q;
-            float prevoff, c, s;
-            matrix J, b, t;
+            float prevoff{}, c, s;
+            matrix J; // , b, t;
             // Initialize v to identify matrix
             for (i = 0; i < dim; i++)
             {
@@ -716,8 +716,8 @@ namespace geom
             vector e;
             int maxc = 0;
             value_type maxf, maxe = abs(m[0][0]);
-            if ((maxf = abs(m[1][1]) > maxe)) maxc = 1, maxe = maxf;
-            if ((maxf = abs(m[2][2]) > maxe)) maxc = 2, maxe = maxf;
+            if (( (maxf = abs(m[1][1])) > maxe )) maxc = 1, maxe = maxf;
+            if (( (maxf = abs(m[2][2])) > maxe )) maxc = 2, maxe = maxf;
             e[0] = v[0][maxc];
             e[1] = v[1][maxc];
             e[2] = v[2][maxc];

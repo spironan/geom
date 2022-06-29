@@ -23,12 +23,15 @@ namespace geom
     template<typename T, size_type size>
     struct Vector
     {
+        #pragma warning( push ) 
+        #pragma warning( disable: 4201 ) // nonstandard extension used : nameless struct/union
         union 
         {
             std::array<T, size> data;
             struct { T x, y, z, w; };
             // include the type you want here.
         };
+        #pragma warning( pop )
 
         Vector<T, size> operator-() const
         {
@@ -167,7 +170,7 @@ namespace geom
 
         SquareMatrix Transpose() const
         {
-            SquareMatrix<T, dim> transpose;
+            SquareMatrix<T, dim> transpose{};
 
             for (int i = 0; i < dim; ++i)
             {
@@ -231,6 +234,7 @@ namespace geom
 
     
     // Functionality
+    static constexpr value_type pi = static_cast<value_type>(3.141592653589793238462643383279502884L);
     static constexpr size_type dim = 3;
     using vector    = Vector<value_type, dim>;
     using point     = Point<dim>;
@@ -245,7 +249,7 @@ namespace geom
     
     static constexpr value_type epsilon = std::numeric_limits<value_type>::epsilon();
     static constexpr value_type maximum = std::numeric_limits<value_type>::max();
-    static constexpr value_type minimum = std::numeric_limits<value_type>::min();
+    static constexpr value_type minimum = std::numeric_limits<value_type>::lowest();
     static constexpr point min_point = { minimum };
     static constexpr point max_point = { maximum };
 
@@ -264,6 +268,23 @@ namespace geom
     vector normalize(vector vec);
     vector cross(vector vecA, vector vecB);
     bool same_side(point p1, point p2, point a, point b);
+
+    template<typename T>
+    value_type volume_of(T const& shape)
+    {
+        value_type vol = maximum;
+
+        if constexpr (std::is_same_v<T, aabb>)
+        {
+            vol = dot(shape.max - shape.min, vector{ value_type{1.0} });
+        }
+        else if constexpr (std::is_same_v<T, sphere>)
+        {
+            vol = value_type{ 4.0 } / value_type{ 3.0 } * pi * shape.radius * shape.radius;
+        }
+
+        return vol;
+    }
 
     // intersection between geometry support
     namespace intersection
@@ -434,7 +455,7 @@ namespace geom
 
                     // Remove the two nodes from the active set and add in the new node.
                     // Done by putting new node at index ’min’ and copying last entry to ’max’
-                    int min = i, max = j;
+                    std::size_t min = i, max = j;
                     if (i > j) min = j, max = i;
                     pNodes[min] = pPair;
                     std::swap(pNodes[max], pNodes.back());
@@ -507,7 +528,7 @@ namespace geom
                     return make_fitting_aabb(vertices);
                 }
 
-                assert(false);
+                assert(true);
             }
 
             template<typename volume>
@@ -648,42 +669,73 @@ namespace geom
             template<typename volume>
             static void FindNodesToMerge(std::vector<std::shared_ptr<Node<volume>>> const& pNodes, std::size_t& i, std::size_t& j)
             {
-                // nearest neighbour with squared distance
-                value_type current_lowest = std::numeric_limits<value_type>::max();
+                // we're trying to find the min cost by looking at various heuristics combined.
+                value_type lowest_cost = maximum;
+
+                //value_type current_lowest = maximum;
                 for (std::size_t x = 0; x < pNodes.size(); ++x)
                 {
                     for (std::size_t y = x + 1; y < pNodes.size(); ++y)
                     {
-                        if constexpr (std::is_same_v<volume, aabb>)
+                        value_type cost = CalculateCost<volume>(pNodes[x]->Volume, pNodes[y]->Volume);
+                        if (cost < lowest_cost)
                         {
-                            auto lhs_center = pNodes[x]->Volume.min + pNodes[x]->Volume.max;
-                            auto rhs_center = pNodes[y]->Volume.min + pNodes[y]->Volume.max;
-
-                            auto sqDist = distance_sqaured(lhs_center, rhs_center);
-                            
-                            if (sqDist < current_lowest)
-                            {
-                                current_lowest = sqDist;
-                                i = x;
-                                j = y;
-                            }
-                        }
-                        else if constexpr (std::is_same_v<volume, sphere>)
-                        {
-                            auto lhs_center = pNodes[x]->Volume.center;
-                            auto rhs_center = pNodes[y]->Volume.center;
-
-                            auto sqDist = distance_sqaured(lhs_center, rhs_center);
-
-                            if (sqDist < current_lowest)
-                            {
-                                current_lowest = sqDist;
-                                i = x;
-                                j = y;
-                            }
+                            lowest_cost = cost;
+                            i = x;
+                            j = y;
                         }
                     }
                 }
+            }
+
+            template<typename volume>
+            static value_type CalculateCost(volume const& firstVol, volume const& secVol)
+            {
+                value_type cost = maximum;
+
+                // nearest neighbour with squared distance
+                static constexpr value_type nearest_neighbour_factor = 0.5f;
+
+                // minimum combined volume
+                static constexpr value_type combined_volume_factor = 0.2f;
+
+                // minimum combined volume
+                static constexpr value_type minimum_volume_relative_increase_factor = 0.3f;
+
+                if constexpr (std::is_same_v<volume, aabb>)
+                {
+                    auto lhs_center = firstVol.min + firstVol.max;
+                    auto rhs_center = secVol.min + secVol.max;
+
+                    auto sqDist = distance_sqaured(lhs_center, rhs_center);
+
+                    auto aabb = ComputeBoundingVolume<volume>({ firstVol, secVol });
+                    auto aabb_volume = volume_of(aabb);
+
+                    auto aabb_relative_increase = aabb_volume / (volume_of(firstVol) + volume_of(secVol));
+
+                    cost = sqDist * nearest_neighbour_factor 
+                        + aabb_volume * combined_volume_factor
+                        + aabb_relative_increase * minimum_volume_relative_increase_factor;
+                }
+                else if constexpr (std::is_same_v<volume, sphere>)
+                {
+                    auto lhs_center = firstVol.center;
+                    auto rhs_center = secVol.center;
+
+                    auto sqDist = distance_sqaured(lhs_center, rhs_center);
+
+                    auto sphere = ComputeBoundingVolume<volume>({ firstVol, secVol });
+                    auto sphere_volume = volume_of(sphere); //4/3*pi*r^2
+
+                    auto sphere_relative_increase = sphere_volume / (volume_of(firstVol) + volume_of(secVol));
+
+                    cost = sqDist * nearest_neighbour_factor 
+                        + sphere_volume * combined_volume_factor
+                        + sphere_relative_increase * minimum_volume_relative_increase_factor;
+                }
+
+                return cost;
             }
         };
 
