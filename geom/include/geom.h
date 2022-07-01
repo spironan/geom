@@ -726,7 +726,7 @@ namespace geom
                     auto sqDist = distance_sqaured(lhs_center, rhs_center);
 
                     auto sphere = ComputeBoundingVolume<volume>({ firstVol, secVol });
-                    auto sphere_volume = volume_of(sphere); //4/3*pi*r^2
+                    auto sphere_volume = volume_of(sphere);
 
                     auto sphere_relative_increase = sphere_volume / (volume_of(firstVol) + volume_of(secVol));
 
