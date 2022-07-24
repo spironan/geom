@@ -405,6 +405,12 @@ namespace geom
             EndCondition end_condition = EndCondition::n_nodes_reached;
             std::size_t cutoff_amount = 1;
             std::size_t evenly_spaced_points = 10;  // minimally 2 points
+            // nearest neighbour with squared distance
+            value_type nearest_neighbour_factor = 1.0f;
+            // minimum combined volume
+            value_type combined_volume_factor = 1.0f;
+            // minimum combined volume
+            value_type minimum_volume_relative_increase_factor = 1.0f;
         };
 
         class Hierarchy
@@ -443,7 +449,7 @@ namespace geom
                 while (pNodes.size() > 1)
                 {
                     // Find indices of the two "nearest" nodes, based on some criterion
-                    FindNodesToMerge<volume>(pNodes, i, j);
+                    FindNodesToMerge<volume>(pNodes, i, j, Settings);
                     // Group nodes i and j together under a new internal node
                     std::shared_ptr<Node<volume>> pPair = std::make_shared<Node<volume>>();
                     //pPair->type = NODE;
@@ -667,7 +673,7 @@ namespace geom
             }
 
             template<typename volume>
-            static void FindNodesToMerge(std::vector<std::shared_ptr<Node<volume>>> const& pNodes, std::size_t& i, std::size_t& j)
+            static void FindNodesToMerge(std::vector<std::shared_ptr<Node<volume>>> const& pNodes, std::size_t& i, std::size_t& j, Settings Settings)
             {
                 // we're trying to find the min cost by looking at various heuristics combined.
                 value_type lowest_cost = maximum;
@@ -677,7 +683,7 @@ namespace geom
                 {
                     for (std::size_t y = x + 1; y < pNodes.size(); ++y)
                     {
-                        value_type cost = CalculateCost<volume>(pNodes[x]->Volume, pNodes[y]->Volume);
+                        value_type cost = CalculateCost<volume>(pNodes[x]->Volume, pNodes[y]->Volume, Settings);
                         if (cost < lowest_cost)
                         {
                             lowest_cost = cost;
@@ -689,18 +695,18 @@ namespace geom
             }
 
             template<typename volume>
-            static value_type CalculateCost(volume const& firstVol, volume const& secVol)
+            static value_type CalculateCost(volume const& firstVol, volume const& secVol, Settings Settings)
             {
                 value_type cost = maximum;
 
                 // nearest neighbour with squared distance
-                static constexpr value_type nearest_neighbour_factor = 0.5f;
+                value_type nearest_neighbour_factor = Settings.nearest_neighbour_factor;
 
                 // minimum combined volume
-                static constexpr value_type combined_volume_factor = 0.2f;
+                value_type combined_volume_factor = Settings.combined_volume_factor;
 
                 // minimum combined volume
-                static constexpr value_type minimum_volume_relative_increase_factor = 0.3f;
+                value_type minimum_volume_relative_increase_factor = Settings.minimum_volume_relative_increase_factor;
 
                 if constexpr (std::is_same_v<volume, aabb>)
                 {
