@@ -232,6 +232,24 @@ namespace geom
         Vector<value_type, dim> dir;
     };
 
+    template<size_type dim>
+    struct Polygon
+    {
+        std::vector<Point<dim>> vertices;
+        
+        Polygon(Point<dim>* point, std::size_t size)
+        {
+            std::size_t iterations = size;
+            while (iterations--)
+            {
+                vertices.emplace_back(*point);
+                point++;
+            }
+        }
+
+        std::size_t size() const { return vertices.size(); }
+        Point<dim> vertex_at(std::size_t index) const { return vertices[index]; }
+    };
     
     // Functionality
     static constexpr value_type pi = static_cast<value_type>(3.141592653589793238462643383279502884L);
@@ -246,6 +264,7 @@ namespace geom
     using sphere    = Sphere<dim>;
     using aabb      = AABB<dim>;
     using ray       = Ray<dim>;
+    using polygon   = Polygon<dim>;
     
     static constexpr value_type epsilon = std::numeric_limits<value_type>::epsilon();
     static constexpr value_type maximum = std::numeric_limits<value_type>::max();
@@ -747,5 +766,166 @@ namespace geom
 
 
 
+    }
+
+    // octtree related functions and structures
+    namespace octree
+    {
+        static constexpr std::size_t octree_size = 8;
+        
+        struct Object 
+        {
+            point center = {};           // Center point for object
+            value_type radius = 0;      // Radius of object bounding sphere
+            Object* pNextObject = nullptr;    // Pointer to next object when linked into list
+        };
+
+        struct Node
+        {
+            point center = {};
+            value_type halfWidth = 0;
+            Node* pChild[octree_size] = {};
+            Object* pObjectList = nullptr;
+        };
+
+        // Preallocates an octree down to a specific depth
+        Node* BuildOctree(point center, value_type halfWidth, std::int32_t stopDepth)
+        {
+            if (stopDepth < 0)
+            {
+                return nullptr;
+            }
+            else 
+            {
+                // Construct and fill in ’root’ of this subtree
+                Node* pNode = new Node();
+                pNode->center = center;
+                pNode->halfWidth = halfWidth;
+                pNode->pObjectList = nullptr;
+                
+                // Recursively construct the eight children of the subtree
+                point offset{};
+                value_type step = halfWidth * 0.5f;
+                for (std::size_t i = 0; i < octree_size; i++)
+                {
+                    offset.x = ((i & 1) ? step : -step);
+                    offset.y = ((i & 2) ? step : -step);
+                    offset.z = ((i & 4) ? step : -step);
+                    pNode->pChild[i] = BuildOctree(center + offset, step, stopDepth - 1);
+                }
+
+                return pNode;
+            }
+        }
+
+        void InsertObject(Node* pTree, Object* pObject)
+        {
+            std::int32_t index = 0, straddle = 0;
+            // Compute the octant number [0..7] the object sphere center is in
+            // If straddling any of the dividing x, y, or z planes, exit directly
+            for (std::int32_t i = 0; i < 3; i++) 
+            {
+                value_type delta = pObject->center[i] - pTree->center[i];
+                
+                if (std::abs(delta) < pTree->halfWidth + pObject->radius) 
+                {
+                    straddle = 1;
+                    break;
+                }
+
+                if (delta > 0.0f) 
+                    index |= (1 << i); // ZYX
+            }
+
+            if (!straddle) 
+            {
+                if (pTree->pChild[index] == nullptr) 
+                {
+                    pTree->pChild[index] = new Node();
+                    //...initialize node contents here...
+                }
+                InsertObject(pTree->pChild[index], pObject);
+            }
+            else 
+            {
+                // Straddling, or no child node to descend into, so
+                // link object into linked list at this node
+                pObject->pNextObject = pTree->pObjectList;
+                pTree->pObjectList = pObject;
+            }
+        }
+    }
+
+    //binary space partition related functions and structures
+    namespace bsp
+    {
+        std::size_t max_depth = 20;
+        std::size_t min_leaf_size = 20;
+        
+        value_type plane_thickness_epsilon = std::numeric_limits<value_type>::epsilon() * 1000;
+
+        struct BSPNode
+        {
+            std::vector<polygon*> polygons = {};
+            BSPNode* left = nullptr, *right = nullptr;
+            BSPNode(std::vector<polygon*>& polygons)
+                : polygons{ polygons }
+                , left{nullptr}
+                , right{nullptr}
+            {
+            }
+
+            BSPNode(BSPNode* leftTree, BSPNode* rightTree)
+                : polygons{ }
+                , left{ leftTree }
+                , right{ rightTree }
+            {
+            }
+        };
+        
+        enum class point_to_plane
+        {
+            point_on_plane,
+            point_in_front_of_plane,
+            point_behind_plane,
+        };
+
+        enum class polygon_to_plane
+        {
+            polygon_coplanar_with_plane,
+            polygon_in_front_of_plane,
+            polygon_behind_plane,
+            polygon_straddling_plane,
+        };
+
+        BSPNode* BuildLeafStoringBSPTree(std::vector<polygon*>& polygons, std::size_t depth);
+        
+        plane GetPlaneFromPolygon(polygon& polygon);
+
+        point IntersectEdgeAgainstPlane(point const& a, point const& b, plane const& plane)
+        {
+            ray ray_from_points = { a, b - a };
+            
+            auto result = intersection::ray_plane(ray_from_points, plane);
+
+            if(result.t_entry > 0.f && result.t_entry < 1.f)
+                return result.p_entry;
+            if (result.t_exit > 0.f && result.t_exit < 1.f)
+                return result.p_exit;
+
+            return point{ 0, 0 };
+        }
+
+        // Given a vector of polygons, attempts to compute a good splitting plane
+        plane PickSplittingPlane(std::vector<polygon*>& polygons);
+
+        // Classify point p to a plane thickened by a given thickness epsilon
+        point_to_plane ClassifyPointToPlane(point p, plane plane);
+
+        // Return value specifying whether the polygon ‘poly’ lies in front of,
+        // behind of, on, or straddles the plane ‘plane’
+        polygon_to_plane ClassifyPolygonToPlane(polygon const* poly, plane plane);
+
+        void SplitPolygon(polygon& poly, plane plane, polygon** frontPoly, polygon** backPoly);
     }
 }

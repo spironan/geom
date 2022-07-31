@@ -913,5 +913,237 @@ namespace geom
             return sphere;
         }
     }
+
 }
 
+namespace geom
+{
+    namespace bsp
+    {
+        BSPNode* BuildLeafStoringBSPTree(std::vector<polygon*>& polygons, std::size_t depth)
+        {
+            // Return NULL tree if there are no polygons
+            if (polygons.empty())
+                return nullptr;
+
+            // Get number of polygons in the input vector
+            std::size_t numPolygons = polygons.size();
+
+            // If criterion for a leaf is matched, create a leaf node from remaining polygons
+            if (depth >= max_depth || numPolygons <= min_leaf_size)
+                return new BSPNode(polygons);
+
+            // Select best possible partitioning plane based on the input geometry
+            Plane splitPlane = PickSplittingPlane(polygons);
+            std::vector<polygon*> frontList, backList;
+
+            // Test each polygon against the dividing plane, adding them
+            // to the front list, back list, or both, as appropriate
+            for (polygon* poly : polygons)
+            {
+                polygon* frontPart, * backPart;
+                switch (ClassifyPolygonToPlane(poly, splitPlane))
+                {
+                case polygon_to_plane::polygon_coplanar_with_plane:
+                    // What’s done in this case depends on what type of tree is being
+                    // built. For a node-storing tree, the polygon is stored inside
+                    // the node at this level (along with all other polygons coplanar
+                    // with the plane). Here, for a leaf-storing tree, coplanar polygons
+                    // are sent to either side of the plane. In this case, to the front
+                    // side, by falling through to the next case
+                case polygon_to_plane::polygon_in_front_of_plane:
+                    frontList.emplace_back(poly);
+                    break;
+                case polygon_to_plane::polygon_behind_plane:
+                    backList.emplace_back(poly);
+                    break;
+                case polygon_to_plane::polygon_straddling_plane:
+                    // Split polygon to plane and send a part to each side of the plane
+                    SplitPolygon(*poly, splitPlane, &frontPart, &backPart);
+                    frontList.emplace_back(frontPart);
+                    backList.emplace_back(backPart);
+                    break;
+                }
+            }
+            // Recursively build child subtrees and return new tree root combining them
+            BSPNode* frontTree = BuildLeafStoringBSPTree(frontList, depth + 1);
+            BSPNode* backTree = BuildLeafStoringBSPTree(backList, depth + 1);
+            return new BSPNode(frontTree, backTree);
+        }
+
+        plane GetPlaneFromPolygon(polygon& polygon)
+        {
+            point vert1 = polygon.vertex_at(0);
+            point vert2 = polygon.vertex_at(1);
+
+            vector normal = normalize(cross(vert1, vert2));
+            value_type dist = dot(vert1, normal);
+
+            return plane{ normal, dist };
+        }
+
+        // Given a vector of polygons, attempts to compute a good splitting plane
+        plane PickSplittingPlane(std::vector<polygon*>& polygons)
+        {
+            // Blend factor for optimizing for balance or splits (should be tweaked)
+            const value_type K = 0.8f;
+            // Variables for tracking best splitting plane seen so far
+            plane bestPlane;
+            value_type bestScore = std::numeric_limits<value_type>::max();
+            // Try the plane of each polygon as a dividing plane
+            for (std::size_t i = 0; i < polygons.size(); i++)
+            {
+                std::int32_t numInFront = 0, numBehind = 0, numStraddling = 0;
+                plane plane = GetPlaneFromPolygon(*polygons[i]);
+                // Test against all other polygons
+                for (std::size_t j = 0; j < polygons.size(); j++)
+                {
+                    // Ignore testing against self
+                    if (i == j)
+                        continue;
+
+                    // Keep standing count of the various poly-plane relationships
+                    switch (ClassifyPolygonToPlane(polygons[j], plane))
+                    {
+                    case polygon_to_plane::polygon_coplanar_with_plane:
+                        /* Coplanar polygons treated as being in front of plane */
+                    case polygon_to_plane::polygon_in_front_of_plane:
+                        numInFront++;
+                        break;
+                    case polygon_to_plane::polygon_behind_plane:
+                        numBehind++;
+                        break;
+                    case polygon_to_plane::polygon_straddling_plane:
+                        numStraddling++;
+                        break;
+                    }
+                }
+
+                // Compute score as a weighted combination (based on K, with K in range
+                // 0..1) between balance and splits (lower score is better)
+                value_type score = K * numStraddling + (1.0f - K) * std::abs(numInFront - numBehind);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestPlane = plane;
+                }
+            }
+            return bestPlane;
+        }
+
+        // Classify point p to a plane thickened by a given thickness epsilon
+        point_to_plane ClassifyPointToPlane(point p, plane plane)
+        {
+            // Compute signed distance of point from plane
+            value_type dist = dot(plane.normal, p) - plane.dist;
+            // Classify p based on the signed distance
+            if (dist > plane_thickness_epsilon)
+                return point_to_plane::point_in_front_of_plane;
+            if (dist < -plane_thickness_epsilon)
+                return point_to_plane::point_behind_plane;
+            return point_to_plane::point_on_plane;
+        }
+
+        // Return value specifying whether the polygon ‘poly’ lies in front of,
+        // behind of, on, or straddles the plane ‘plane’
+        polygon_to_plane ClassifyPolygonToPlane(polygon const* poly, plane plane)
+        {
+            // Loop over all polygon vertices and count how many vertices
+            // lie in front of and how many lie behind of the thickened plane
+            std::int32_t numInFront = 0, numBehind = 0;
+            std::int32_t numVerts = poly->size();
+            for (std::size_t i = 0; i < numVerts; i++)
+            {
+                point p = poly->vertex_at(i);
+                switch (ClassifyPointToPlane(p, plane))
+                {
+                case point_to_plane::point_in_front_of_plane:
+                    numInFront++;
+                    break;
+                case point_to_plane::point_behind_plane:
+                    numBehind++;
+                    break;
+                }
+            }
+            // If vertices on both sides of the plane, the polygon is straddling
+            if (numBehind != 0 && numInFront != 0)
+                return polygon_to_plane::polygon_straddling_plane;
+            // If one or more vertices in front of the plane and no vertices behind
+            // the plane, the polygon lies in front of the plane
+            if (numInFront != 0)
+                return polygon_to_plane::polygon_in_front_of_plane;
+            // Ditto, the polygon lies behind the plane if no vertices in front of
+            // the plane, and one or more vertices behind the plane
+            if (numBehind != 0)
+                return polygon_to_plane::polygon_behind_plane;
+            // All vertices lie on the plane so the polygon is coplanar with the plane
+            return polygon_to_plane::polygon_coplanar_with_plane;
+        }
+
+        void SplitPolygon(polygon& poly, plane plane, polygon** frontPoly, polygon** backPoly)
+        {
+            static constexpr std::size_t MAX_POINTS = 30; //poly.size() * 3;
+
+            std::size_t numFront = 0, numBack = 0;
+            point frontVerts[MAX_POINTS], backVerts[MAX_POINTS];
+            // Test all edges (a, b) starting with edge from last to first vertex
+            std::size_t numVerts = poly.size();
+            point a = poly.vertex_at(numVerts - 1);
+            point_to_plane aSide = ClassifyPointToPlane(a, plane);
+            // Loop over all edges given by vertex pair (n - 1, n)
+            for (std::size_t n = 0; n < numVerts; n++)
+            {
+                point b = poly.vertex_at(n);
+                point_to_plane bSide = ClassifyPointToPlane(b, plane);
+                if (bSide == point_to_plane::point_in_front_of_plane)
+                {
+                    if (aSide == point_to_plane::point_behind_plane)
+                    {
+                        // Edge (a, b) straddles, output intersection point to both sides
+                        // Consistently clip edge as ordered going from in front -> behind
+                        point i = IntersectEdgeAgainstPlane(b, a, plane);
+                        assert(ClassifyPointToPlane(i, plane) == point_to_plane::point_on_plane);
+                        frontVerts[numFront++] = backVerts[numBack++] = i;
+                    }
+                    // In all three cases, output b to the front side
+                    frontVerts[numFront++] = b;
+                }
+                else if (bSide == point_to_plane::point_behind_plane)
+                {
+                    if (aSide == point_to_plane::point_in_front_of_plane)
+                    {
+                        // Edge (a, b) straddles plane, output intersection point
+                        point i = IntersectEdgeAgainstPlane(a, b, plane);
+                        assert(ClassifyPointToPlane(i, plane) == point_to_plane::point_on_plane);
+                        frontVerts[numFront++] = backVerts[numBack++] = i;
+                    }
+                    else if (aSide == point_to_plane::point_on_plane)
+                    {
+                        // Output a when edge (a, b) goes from ‘on’ to ‘behind’ plane
+                        backVerts[numBack++] = a;
+                    }
+                    // In all three cases, output b to the back side
+                    backVerts[numBack++] = b;
+                }
+                else
+                {
+                    // b is on the plane. In all three cases output b to the front side
+                    frontVerts[numFront++] = b;
+                    // In one case, also output b to back side
+                    if (aSide == point_to_plane::point_behind_plane)
+                        backVerts[numBack++] = b;
+                }
+
+                // Keep b as the starting point of the next edge
+                a = b;
+                aSide = bSide;
+            }
+
+            // Create (and return) two new polygons from the two vertex lists
+            *frontPoly = new polygon(frontVerts, numFront);
+            *backPoly = new polygon(backVerts, numBack);
+        }
+    }
+
+
+}
